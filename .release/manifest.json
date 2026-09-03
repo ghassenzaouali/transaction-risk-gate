@@ -1,0 +1,7 @@
+{
+  "version": "v1.0.0",
+  "sourceSha": "4b6a27debae388b38b02403867f95b6a4f0bd248",
+  "apiImage": "trgghz2026.azurecr.io/transaction-risk-gate-api@sha256:878ba79569e6123aab8092652dbec0b60db6cfc30649000cbd16d9c6be42d16d",
+  "webImage": "trgghz2026.azurecr.io/transaction-risk-gate-web@sha256:a4b2975c85ab6288244e443df99cfea9b7c508e19d3231d17d18dd07e3e98874",
+  "createdAt": "2026-09-03T13:50:00.000Z"
+}
