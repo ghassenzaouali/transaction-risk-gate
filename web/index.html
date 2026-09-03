@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Simulateur explicable de risque transactionnel" />
+    <title>Transaction Risk Gate</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="#main" aria-label="Transaction Risk Gate, aller au contenu">
+        <span class="brand-mark" aria-hidden="true">TRG</span>
+        <span>
+          <strong>Transaction Risk Gate</strong>
+          <small>Décision de risque explicable</small>
+        </span>
+      </a>
+      <div class="runtime" aria-label="État du service">
+        <span class="runtime-item"
+          ><strong id="replica-count">0</strong> replica(s) observé(s)</span
+        >
+        <span class="status status-loading" id="status" role="status" aria-live="polite">
+          <span class="status-dot" aria-hidden="true"></span>
+          <span id="status-label">Connexion…</span>
+        </span>
+      </div>
+    </header>
+
+    <main id="main">
+      <section class="intro" aria-labelledby="intro-title">
+        <p class="eyebrow">Démonstrateur bancaire</p>
+        <h1 id="intro-title">Comprendre une décision, pas seulement recevoir un score.</h1>
+        <p>
+          Simulez une transaction synthétique. Le moteur applique cinq règles déterministes et
+          explique chaque signal déclenché, sans conserver de donnée métier durable.
+        </p>
+      </section>
+
+      <div class="workspace">
+        <section class="panel simulator" aria-labelledby="simulator-title">
+          <div class="panel-heading">
+            <div>
+              <p class="step">01 · Entrée</p>
+              <h2 id="simulator-title">Nouvelle transaction</h2>
+            </div>
+            <button class="button button-ghost" type="button" id="new-transaction">
+              Réinitialiser
+            </button>
+          </div>
+
+          <fieldset class="scenarios">
+            <legend>Charger un scénario</legend>
+            <div class="scenario-grid">
+              <button class="scenario scenario-approved" type="button" data-scenario="approved">
+                <span>APPROVED</span>
+                Transaction habituelle
+              </button>
+              <button class="scenario scenario-review" type="button" data-scenario="review">
+                <span>REVIEW</span>
+                Contexte à vérifier
+              </button>
+              <button class="scenario scenario-rejected" type="button" data-scenario="rejected">
+                <span>REJECTED</span>
+                Signaux cumulés
+              </button>
+            </div>
+          </fieldset>
+
+          <form id="transaction-form" novalidate>
+            <div class="form-grid">
+              <div class="field field-wide">
+                <label for="transactionId">Identifiant de transaction</label>
+                <input
+                  id="transactionId"
+                  name="transactionId"
+                  autocomplete="off"
+                  aria-describedby="transactionId-error"
+                  required
+                />
+                <span class="field-error" id="transactionId-error"></span>
+              </div>
+              <div class="field field-wide">
+                <label for="cardId">Identifiant de carte synthétique</label>
+                <input
+                  id="cardId"
+                  name="cardId"
+                  autocomplete="off"
+                  aria-describedby="cardId-hint cardId-error"
+                  required
+                />
+                <span class="field-hint" id="cardId-hint">
+                  Donnée de démonstration, jamais une vraie carte.
+                </span>
+                <span class="field-error" id="cardId-error"></span>
+              </div>
+              <div class="field">
+                <label for="amount">Montant</label>
+                <div class="input-suffix">
+                  <input
+                    id="amount"
+                    name="amount"
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    aria-describedby="amount-error currency-error"
+                    required
+                  />
+                  <span>EUR</span>
+                </div>
+                <input name="currency" type="hidden" value="EUR" />
+                <span class="field-error" id="amount-error"></span>
+                <span class="field-error" id="currency-error"></span>
+              </div>
+              <div class="field">
+                <label for="country">Pays</label>
+                <input
+                  id="country"
+                  name="country"
+                  maxlength="2"
+                  placeholder="FR"
+                  aria-describedby="country-error"
+                  required
+                />
+                <span class="field-error" id="country-error"></span>
+              </div>
+              <div class="field">
+                <label for="channel">Canal</label>
+                <select id="channel" name="channel" aria-describedby="channel-error" required>
+                  <option value="in_store">En magasin</option>
+                  <option value="online">En ligne</option>
+                </select>
+                <span class="field-error" id="channel-error"></span>
+              </div>
+              <div class="field">
+                <label for="merchantCategory">Catégorie marchande</label>
+                <input
+                  id="merchantCategory"
+                  name="merchantCategory"
+                  autocomplete="off"
+                  placeholder="grocery"
+                  aria-describedby="merchantCategory-error"
+                  required
+                />
+                <span class="field-error" id="merchantCategory-error"></span>
+              </div>
+            </div>
+
+            <div class="form-message" id="form-message" role="alert" aria-live="assertive"></div>
+            <button class="button button-primary" id="submit-button" type="submit">
+              Évaluer la transaction
+              <span aria-hidden="true">→</span>
+            </button>
+          </form>
+        </section>
+
+        <section class="panel result-panel" aria-labelledby="result-title">
+          <div class="panel-heading">
+            <div>
+              <p class="step">02 · Décision</p>
+              <h2 id="result-title">Résultat expliqué</h2>
+            </div>
+            <span class="mode-badge" id="decision-mode">En attente</span>
+          </div>
+
+          <div class="result-empty" id="result-empty">
+            <span class="result-empty-mark" aria-hidden="true">?</span>
+            <p>Choisissez un scénario ou renseignez le formulaire pour obtenir une décision.</p>
+          </div>
+
+          <article class="decision hidden" id="decision" aria-live="polite">
+            <div class="decision-summary">
+              <div>
+                <p class="decision-label">Décision</p>
+                <strong class="decision-verdict" id="decision-verdict">—</strong>
+              </div>
+              <div class="score" aria-label="Score de risque">
+                <strong id="decision-score">0</strong>
+                <span>/ 100</span>
+              </div>
+            </div>
+            <p class="decision-copy" id="decision-copy"></p>
+            <div class="decision-meta">
+              <span id="decision-id"></span>
+              <span id="decision-time"></span>
+            </div>
+            <h3>Règles déclenchées</h3>
+            <ul class="reason-list" id="decision-reasons"></ul>
+          </article>
+        </section>
+      </div>
+
+      <section class="panel rules-panel" aria-labelledby="rules-title">
+        <div class="panel-heading">
+          <div>
+            <p class="step">03 · Politique</p>
+            <h2 id="rules-title">Règles actives</h2>
+          </div>
+          <p class="bands" id="score-bands">Chargement de la politique…</p>
+        </div>
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Règle</th>
+                <th>Poids</th>
+                <th>Paramètres actifs</th>
+              </tr>
+            </thead>
+            <tbody id="rules-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel history-panel" aria-labelledby="history-title">
+        <div class="panel-heading">
+          <div>
+            <p class="step">Session locale</p>
+            <h2 id="history-title">Historique de cette page</h2>
+          </div>
+          <button class="button button-ghost" id="clear-history" type="button">Effacer</button>
+        </div>
+        <p class="privacy-note">
+          Conservé uniquement en mémoire dans cet onglet. Aucune liste globale n’est exposée par
+          l’API.
+        </p>
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Heure</th>
+                <th>Décision</th>
+                <th>Score</th>
+                <th>Règles</th>
+                <th>Instance</th>
+              </tr>
+            </thead>
+            <tbody id="history-body"></tbody>
+          </table>
+        </div>
+        <p class="empty" id="history-empty">Aucune décision dans cette session.</p>
+      </section>
+    </main>
+
+    <footer>
+      <span>Transaction Risk Gate · Démonstrateur d’ingénierie</span>
+      <span>Règles heuristiques · EUR uniquement · Aucune donnée réelle</span>
+    </footer>
+
+    <script type="module" src="app.mjs"></script>
+  </body>
+</html>

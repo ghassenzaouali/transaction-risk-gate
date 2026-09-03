@@ -93,10 +93,14 @@ jobs:
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: api/package-lock.json
+          cache-dependency-path: |
+            api/package-lock.json
+            web/package-lock.json
 
-      - name: Installer les dépendances de l’API
-        run: npm ci --prefix api
+      - name: Installer les dépendances
+        run: |
+          npm ci --prefix api
+          npm ci --prefix web
 
       - name: Compiler l’API en TypeScript strict
         run: npm run build --prefix api
@@ -107,6 +111,9 @@ jobs:
       - name: Vérifier la cible renforcée du domaine à 90 %
         run: npm run test:coverage:domain --prefix api
 
+      - name: Tester et couvrir le web à 80 % minimum
+        run: npm run test:coverage --prefix web
+
       - name: Publier les rapports LCOV
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -114,5 +121,7 @@ jobs:
           path: |
             api/coverage/lcov.info
             api/coverage/coverage-summary.json
+            web/coverage/lcov.info
+            web/coverage/coverage-summary.json
           if-no-files-found: error
           retention-days: 7
