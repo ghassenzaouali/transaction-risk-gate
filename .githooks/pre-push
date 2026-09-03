@@ -1,0 +1,6 @@
+#!/bin/sh
+set -eu
+
+hook_directory="${0%/*}"
+set -- pre-push
+. "${hook_directory}/run-pre-commit"

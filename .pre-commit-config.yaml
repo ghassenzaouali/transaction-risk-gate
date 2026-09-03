@@ -1,0 +1,99 @@
+default_install_hook_types:
+  - pre-commit
+  - commit-msg
+  - pre-push
+
+default_stages:
+  - pre-commit
+
+fail_fast: false
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-added-large-files
+        args:
+          - --maxkb=512
+      - id: check-case-conflict
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-yaml
+      - id: detect-private-key
+      - id: end-of-file-fixer
+      - id: mixed-line-ending
+        args:
+          - --fix=lf
+        exclude: '\.(bat|cmd)$'
+      - id: no-commit-to-branch
+        args:
+          - --branch
+          - main
+          - --branch
+          - develop
+      - id: trailing-whitespace
+        args:
+          - --markdown-linebreak-ext=md
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks-docker
+        entry: >-
+          ghcr.io/gitleaks/gitleaks@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f
+          git --pre-commit --redact --staged --verbose
+        args:
+          - --config=.gitleaks.toml
+
+  - repo: local
+    hooks:
+      - id: trg-format
+        name: Transaction Risk Gate format
+        entry: npx --no-install prettier --check --ignore-unknown
+        language: system
+        types_or:
+          - javascript
+          - json
+          - markdown
+          - ts
+          - yaml
+      - id: trg-markdown
+        name: Transaction Risk Gate Markdown
+        entry: npx --no-install markdownlint-cli2
+        language: system
+        files: '\.md$'
+        pass_filenames: false
+      - id: trg-repository-policy
+        name: Transaction Risk Gate repository policy
+        entry: node scripts/governance/validate-repository.mjs
+        language: system
+        pass_filenames: false
+      - id: trg-governance-tests
+        name: Transaction Risk Gate governance tests
+        entry: node --test scripts/governance/tests/git-policy.test.mjs
+        language: system
+        files: '(^|/)(scripts/governance/.+|\.github/.+|\.githooks/.+|\.pre-commit-config\.yaml)$'
+        pass_filenames: false
+      - id: trg-operations-tests
+        name: Transaction Risk Gate operations tests
+        entry: >-
+          node --test scripts/smoke/smoke-test.test.mjs scripts/release/manifest.test.mjs
+          scripts/load/config.test.mjs scripts/load/evidence.test.mjs
+          scripts/failure/redis-outage.test.mjs
+        language: system
+        files: '(^|/)(scripts/(smoke|release|load|failure)/.+|infra/rollback\.sh|\.release/.+)$'
+        pass_filenames: false
+      - id: trg-commit-message
+        name: Transaction Risk Gate commit message
+        entry: node scripts/governance/validate-commit-message.mjs
+        language: system
+        stages:
+          - commit-msg
+      - id: trg-pre-push
+        name: Transaction Risk Gate pre-push policy
+        entry: node scripts/governance/validate-pre-push.mjs
+        language: system
+        always_run: true
+        pass_filenames: false
+        stages:
+          - pre-push

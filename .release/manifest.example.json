@@ -1,0 +1,7 @@
+{
+  "version": "v1.0.0",
+  "sourceSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "apiImage": "registry.azurecr.io/trg-api@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "webImage": "registry.azurecr.io/trg-web@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "createdAt": "2026-09-01T00:00:00.000Z"
+}
