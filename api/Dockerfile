@@ -3,7 +3,7 @@
 # --- étape build : TypeScript -> JavaScript -------------------------------
 # npm ci installe TOUTES les dépendances (tsx, typescript) ; cette étape est
 # jetée, rien de tout ça n'atteint l'image finale.
-FROM node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32 AS build
+FROM node:26-alpine@sha256:2d984a15c9b54fd0aeb608b8e0d0d83529eb34d2966db27a1fb4f1edc3d298a3 AS build
 ARG VCS_REF=local
 ARG VERSION=dev
 WORKDIR /app
@@ -14,7 +14,7 @@ COPY src ./src
 RUN npm run build
 
 # --- étape runtime : l'image de production -------------------------------
-FROM node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32 AS runtime
+FROM node:26-alpine@sha256:2d984a15c9b54fd0aeb608b8e0d0d83529eb34d2966db27a1fb4f1edc3d298a3 AS runtime
 ARG VCS_REF=local
 ARG VERSION=dev
 ENV NODE_ENV=production
