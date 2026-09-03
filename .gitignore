@@ -1,0 +1,33 @@
+# Dépendances installées — reconstruites par npm install
+node_modules/
+
+# Sortie de compilation TypeScript — reconstruite par npm run build
+dist/
+
+# Variables d'environnement locales — contiennent des secrets
+.env
+.env.*
+!.env.example
+
+# Journaux
+*.log
+
+# Outils et rapports locaux — reproductibles, jamais versionnés
+.local/
+.scannerwork/
+artifacts/
+coverage/
+reports/
+
+# Rapports de scanners susceptibles de contenir des détails sensibles
+gitleaks-report.*
+snyk-report.*
+trivy-report.*
+
+# Notes de travail personnelles, hors livrable
+/notes/
+*.private.md
+
+# Fichiers système
+.DS_Store
+Thumbs.db
