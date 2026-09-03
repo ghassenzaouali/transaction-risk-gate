@@ -41,11 +41,16 @@ décision rétablie `APPROVED` après redémarrage et sonde half-open du circuit
 finale `normal`. Le smoke préalable confirmait santé, cinq règles, Redis disponible et rejeu
 idempotent. La politique fail-safe n'a produit aucune approbation pendant la panne.
 
-Rollback de déploiement : le [run du rollback][1] rejouera en intégration la bascule du trafic vers
-les révisions précédentes, le smoke test sur l'état restauré et le maintien du workflow en échec ;
-le [run de restauration][2] rétablira ensuite explicitement les révisions courantes. Ces deux runs
-sont déclenchés via `workflow_dispatch` de `deploy.yml`, une fois le workflow présent sur `main`. La
-production n'est jamais ciblée.
+Rollback de déploiement : le [run de rollback][1] a basculé 100 % du trafic API et web de
+`trg-*-integration` de la révision `--0000003` vers la précédente `--0000002`, puis réussi le smoke
+test complet sur l'état restauré. Le [run de restauration][2] a ensuite rétabli explicitement les
+révisions courantes `--0000003`, smoke test vert. Les deux passent par `workflow_dispatch` de
+`deploy.yml` avec authentification OIDC ; la production n'est jamais ciblée.
 
-[1]: https://github.com/ghassenzaouali/transaction-risk-gate/actions/runs/REMPLACER-rollback
-[2]: https://github.com/ghassenzaouali/transaction-risk-gate/actions/runs/REMPLACER-restauration
+Note : lors du premier accès d'une nouvelle révision, le circuit breaker Redis peut mettre plus de
+180 s à passer en `half-open` sur l'environnement Container Apps mutualisé (démarrage à froid). Le
+smoke test est alors rejoué une fois la révision chaude, sans reconstruction ni changement de
+digest.
+
+[1]: https://github.com/ghassenzaouali/transaction-risk-gate/actions/runs/33770007667
+[2]: https://github.com/ghassenzaouali/transaction-risk-gate/actions/runs/33770128542
