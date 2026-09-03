@@ -1,0 +1,21 @@
+{
+  "name": "transaction-risk-gate-tooling",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "docs:lint": "markdownlint-cli2",
+    "format:check": "prettier --check --ignore-unknown .",
+    "format:write": "prettier --write --ignore-unknown .",
+    "governance:check": "node scripts/governance/validate-repository.mjs",
+    "governance:test": "node --test scripts/governance/tests/git-policy.test.mjs",
+    "operations:test": "node --test scripts/smoke/smoke-test.test.mjs scripts/release/manifest.test.mjs scripts/load/config.test.mjs scripts/load/evidence.test.mjs scripts/failure/redis-outage.test.mjs"
+  },
+  "devDependencies": {
+    "markdownlint-cli2": "0.23.2",
+    "prettier": "3.9.6"
+  }
+}

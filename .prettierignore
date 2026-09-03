@@ -1,0 +1,8 @@
+.git/
+.local/
+.scannerwork/
+artifacts/
+coverage/
+dist/
+node_modules/
+**/package-lock.json
