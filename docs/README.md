@@ -30,11 +30,10 @@ cloud n’est déclarée acquise qu’après un workflow vert associé à un SHA
 - [Quality gates](governance/quality-security-gates.md)
 - [Politique de release](governance/release-policy.md)
 
-## Preuves attendues
+## Preuves
 
-<!-- À COMPLÉTER en TRG-9, une fois les workflows verts et associés à un SHA. -->
-
-- déploiements Azure par OIDC et smoke tests d’intégration, préproduction et production ;
-- mesures k6 baseline, scale et stress avec zéro erreur HTTP ;
-- panne Redis Compose, rollback Azure d’intégration et restauration ;
-- promotion du même digest jusqu’à la release taguée.
+- déploiement intégration par OIDC et smoke test verts (run `33759252435`, SHA `4b6a27de`) ;
+- baseline k6 local : 0 % d'erreur HTTP, 100 % de checks, cinq déclenchements de vélocité sur huit
+  transactions ; `scale` et `stress` Azure rejoués par le workflow depuis `release/*` ;
+- panne Redis Compose : `redis_failure_recovery_passed` — `REVIEW` dégradé puis `APPROVED` rétabli ;
+- promotion du même digest jusqu'à la release taguée via `.release/manifest.json`.
