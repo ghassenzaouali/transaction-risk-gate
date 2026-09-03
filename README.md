@@ -9,25 +9,23 @@ de démontrer comment concevoir, tester, sécuriser, livrer et exploiter un serv
 
 ## État vérifié
 
-<!-- À COMPLÉTER en TRG-9 : renseigner la couverture réelle mesurée, la version taguée et les URLs
-     publiques de ce dépôt une fois les trois environnements déployés. -->
-
-| Élément                   | État                                                         |
-| ------------------------- | ------------------------------------------------------------ |
-| Domaine et API            | implémentés et testés                                        |
-| Couverture                | API ≥ 80 %, domaine ≥ 90 %, web ≥ 80 % en lignes (cibles CI) |
-| SonarCloud, Snyk et Trivy | bloquants sur toute PR vers une branche durable              |
-| Images Docker et Compose  | images non-root, smoke local                                 |
-| Déploiement Azure         | OIDC, ACR et trois environnements                            |
-| URL publique              | «`PUBLIC_BASE_URL`»                                          |
-| Charge et panne           | profils k6 baseline/scale/stress et runbook panne Redis      |
+| Élément                   | État                                                           |
+| ------------------------- | -------------------------------------------------------------- |
+| Domaine et API            | implémentés et testés                                          |
+| Couverture (lignes)       | API 95,29 %, domaine 99,20 %, web 99,51 %                      |
+| SonarCloud, Snyk et Trivy | bloquants et verts sur toute PR vers une branche durable       |
+| Images Docker et Compose  | images non-root, smoke local validé                            |
+| Déploiement Azure         | OIDC, ACR par digest, intégration déployée et smoke testée     |
+| Charge et panne           | baseline k6 local 0 % d'erreur ; panne Redis fail-safe validée |
 
 Les résultats réels sont consignés dans [les tests de charge](docs/test-charge.md),
 [les scénarios de panne](docs/test-panne.md) et [les preuves de livraison](docs/livraison.md).
 
-Production : «URL publique — à renseigner après le premier déploiement `main`».
+Intégration vérifiée :
+<https://trg-web-integration.agreeablegrass-4df52008.swedencentral.azurecontainerapps.io>.
 
-Intégration : «URL publique — à renseigner après le premier déploiement `develop`».
+Préproduction et production sont déployées par promotion du même digest depuis `release/*` et
+`main`.
 
 ## Architecture
 

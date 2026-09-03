@@ -131,13 +131,15 @@ Chaque déploiement réussi produit un résumé GitHub et un fichier `deployment
 l'environnement, la version, le SHA, les digests, l'URL, la date et le résultat du smoke test. Ces
 fichiers ne contiennent aucun secret.
 
-<!-- À COMPLÉTER en TRG-8/TRG-9, à partir des runs réels de ce dépôt. -->
+Le 3 septembre 2026, le run GitHub `33759252435` (push `develop`, SHA
+`4b6a27debae388b38b02403867f95b6a4f0bd248`) a construit une fois les images, les a publiées dans
+`trgghz2026` par digest, déployé les trois Container Apps `trg-{redis,api,web}-integration` et
+réussi le smoke test sur
+`https://trg-web-integration.agreeablegrass-4df52008.swedencentral.azurecontainerapps.io`. La preuve
+immuable `deployment-evidence.json` de ce run relie le SHA, les deux digests et le résultat du
+smoke.
 
-L'automatisation et ses tests locaux sont implémentés dans TRG-8. Consigner : le run CI qui publie
-les images par digest et déploie l'intégration, le run qui promeut les mêmes digests en
-préproduction depuis `release/*`, puis le run qui les déploie en production depuis `main` avec smoke
-test sur l'URL publique «`PUBLIC_BASE_URL`».
-
-La preuve production associe la version taguée au SHA source et aux digests immuables enregistrés
-dans `.release/manifest.json`. Un hotfix de procédure ne modifie ni `api/` ni `web/` et ne
-reconstruit donc pas les artefacts promus.
+La promotion en préproduction depuis `release/*` puis en production depuis `main` rejoue exactement
+les mêmes digests via `.release/manifest.json` : `resolve_promotion` refuse tout contexte de build
+`api/` ou `web/` divergent du `sourceSha`. Un hotfix de procédure ne modifie ni `api/` ni `web/` et
+ne reconstruit donc pas les artefacts promus.

@@ -7,7 +7,7 @@ séparent les responsabilités :
 
 | Template                  | Responsabilité                                                                    |
 | ------------------------- | --------------------------------------------------------------------------------- |
-| `infra/platform.bicep`    | ACR, Log Analytics, identité `AcrPull` et environnement Azure Container Apps      |
+| `infra/platform.bicep`    | ACR et identité `AcrPull` propres au dépôt ; référence l'environnement mutualisé  |
 | `infra/apps.bicep`        | Redis, API et web pour un environnement logique, depuis deux digests déjà publiés |
 | `infra/provision.sh`      | validation et déploiement idempotent de la plateforme                             |
 | `infra/deploy-apps.sh`    | validation des entrées et déploiement d’un environnement logique                  |
@@ -19,17 +19,21 @@ digests puis appelle le second template sans reconstruction.
 
 ## Environnements
 
-Une plateforme physique est mutualisée pour limiter le coût. Les données et secrets ne le sont pas :
-chaque environnement logique possède son propre trio Redis/API/web.
+L'abonnement « Azure for Students » n'autorise **qu'un environnement Azure Container Apps par
+région**. Il est donc mutualisé et seulement référencé par ID. Le registre `trgghz2026`, l'identité
+runtime `id-transaction-risk-gate-runtime` et les Container Apps restent propres au dépôt dans
+`rg-transaction-risk-gate`. Les données et secrets ne sont jamais partagés : chaque environnement
+logique possède son propre trio Redis/API/web.
 
-| Git durable | GitHub Environment | Noms Container Apps, exemple                                    |
-| ----------- | ------------------ | --------------------------------------------------------------- |
-| `develop`   | `integration`      | `redis-integration`, `api-integration`, `web-integration`       |
-| `release/*` | `preproduction`    | `redis-preproduction`, `api-preproduction`, `web-preproduction` |
-| `main`/`v*` | `production`       | `redis`, `api`, `web`                                           |
+| Git durable | GitHub Environment | Noms Container Apps                                                         |
+| ----------- | ------------------ | --------------------------------------------------------------------------- |
+| `develop`   | `integration`      | `trg-redis-integration`, `trg-api-integration`, `trg-web-integration`       |
+| `release/*` | `preproduction`    | `trg-redis-preproduction`, `trg-api-preproduction`, `trg-web-preproduction` |
+| `main`/`v*` | `production`       | `trg-redis`, `trg-api`, `trg-web`                                           |
 
-Le partage d’ACR, de Log Analytics et de l’environnement Container Apps est un compromis de coût.
-Une production réelle séparerait au minimum les groupes de ressources et idéalement les abonnements.
+Le préfixe est court (`trg-`) : un nom de Container App est limité à 32 caractères, suffixe
+d'environnement inclus. Le partage de l'environnement Container Apps est un compromis de coût. Une
+production réelle séparerait au minimum les groupes de ressources et idéalement les abonnements.
 
 Le SKU ACR Basic conserve un endpoint public authentifié : compte administrateur et pull anonyme
 sont désactivés, les workloads utilisent l’identité `AcrPull` et la CI pousse par OIDC. Un registre
@@ -89,19 +93,20 @@ repo:ghassenzaouali@139699856/transaction-risk-gate@1352445451:environment:produ
 
 Le workflow déclare `permissions: id-token: write` et le GitHub Environment correspondant. Azure
 émet alors un jeton court ; aucun client secret permanent n’est stocké. L'identité de déploiement
-reçoit `Owner` **uniquement** sur le groupe de ressources `rg-transaction-risk-gate`, jamais sur
-l'abonnement : le pipeline provisionne la plateforme (ACR, Log Analytics, environnement Container
-Apps) puis crée l'attribution `AcrPull` de l'identité runtime, ce qui exige la gestion des
-attributions de rôle à ce périmètre. En production, `Role Based Access Control Administrator`
-assorti d'une condition limitant les rôles assignables à `AcrPull` remplacerait `Owner` (voir
-[limites](limites.md)). L'identité runtime distincte ne reçoit que `AcrPull` sur l'ACR.
+reçoit `Owner` **uniquement** sur `rg-transaction-risk-gate` et `Container Apps Contributor`
+**uniquement** sur l'environnement Container Apps mutualisé — jamais sur l'abonnement. Le premier
+périmètre couvre l'ACR, l'identité runtime et l'attribution `AcrPull` créée par Bicep ; le second
+autorise le rattachement cross-RG des Container Apps à l'environnement partagé. En production,
+`Role Based Access Control Administrator` assorti d'une condition limitant les rôles assignables à
+`AcrPull` remplacerait `Owner` (voir [limites](limites.md)). L'identité runtime distincte ne reçoit
+que `AcrPull` sur l'ACR.
 
 ## Commandes reproductibles
 
 Prévisualiser puis appliquer la plateforme :
 
 ```bash
-PROVISION_MODE=what-if bash infra/provision.sh
+AZURE_CONTAINERAPPS_ENVIRONMENT_ID='<id complet de l environnement mutualise>' \
 PROVISION_MODE=apply bash infra/provision.sh
 ```
 
@@ -125,7 +130,9 @@ Dans TRG-7, les deux templates compilent avec Bicep, Compose est validé statiqu
 sont reconstruites puis scannées dans la CI. TRG-8 ajoute publication ACR, déploiement OIDC, smoke
 tests, manifeste de promotion, preuve par digest et rollback.
 
-<!-- À COMPLÉTER en TRG-8, à partir des runs réels de ce dépôt : consigner le run CI qui confirme en
-     intégration la publication ACR, la connexion OIDC, le déploiement Bicep, la résolution de l'URL,
-     le smoke test et la preuve immuable ; puis les runs de promotion en préproduction et en
-     production, tous appuyés sur le même manifeste de candidat, sans reconstruction d'image. -->
+Le run GitHub `33759252435` (push `develop`, SHA `4b6a27de`) a confirmé en intégration : publication
+ACR par digest, connexion OIDC, déploiement Bicep des trois Container Apps rattachées à
+l'environnement mutualisé par ID, résolution de l'URL publique, smoke test et génération de la
+preuve immuable. Les promotions en préproduction (`release/*`) puis production (`main`) rejouent les
+mêmes digests via `.release/manifest.json`, sans reconstruction ; leurs runs sont consignés dans
+[livraison](livraison.md).
