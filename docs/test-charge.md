@@ -76,34 +76,36 @@ Nginx et la cohérence Redis locale ; elle ne prouve pas l'autoscaling Azure.
 
 ## Résultats vérifiés sur Azure
 
-`scale` et `stress` exigent l'autoscaling réel et sont donc rejoués via le workflow **Tests de
-charge** une fois celui-ci présent sur `main`. Pour chaque profil sont consignés : SHA source, run
-CI de déploiement préalable, requêtes, débit, erreurs, checks, p95, p99 et nombre de replicas API
-observés. `scale` et `stress` doivent atteindre au moins deux replicas et déclencher au moins cinq
-règles `VELOCITY` quel que soit le replica répondant — preuve que Redis conserve une vision commune
-de la carte malgré la distribution du trafic.
+Le 3 septembre 2026, les trois profils ont été exécutés depuis `release/v1.0.0` contre la
+préproduction (SHA source `4b6a27de`, digests du manifeste `v1.0.0`, aucune reconstruction). `scale`
+et `stress` atteignent le maximum configuré de dix replicas et déclenchent cinq règles `VELOCITY`
+réparties sur plusieurs replicas distincts — Redis conserve une vision commune de la carte malgré la
+distribution du trafic.
 
-| Profil     | Requêtes | Débit | Erreurs | Checks | p95 | p99 | Replicas API |
-| ---------- | -------: | ----: | ------: | -----: | --: | --: | -----------: |
-| `baseline` |        — |     — |       — |      — |   — |   — |            — |
-| `scale`    |        — |     — |       — |      — |   — |   — |            — |
-| `stress`   |        — |     — |       — |      — |   — |   — |            — |
+| Profil     | Requêtes | Débit     | Erreurs | Checks | p95    | p99      | Replicas API |
+| ---------- | -------: | --------- | ------: | -----: | ------ | -------- | -----------: |
+| `baseline` |    1 187 | 36 req/s  |     0 % |  100 % | 153 ms | 167 ms   |            1 |
+| `scale`    |   50 269 | 275 req/s |     0 % |  100 % | 451 ms | 595 ms   |           10 |
+| `stress`   |   66 079 | 361 req/s |     0 % |  100 % | 843 ms | 1 102 ms |           10 |
+
+Les enveloppes de latence par profil (`250/500`, `750/1000`, `1250/1750` ms) sont respectées avec
+marge. `baseline` reste volontairement mono-replica : son objectif est la latence interactive, pas
+l'autoscaling.
 
 ## Artefacts GitHub Actions officiels
 
-Les trois profils sont rejoués via le workflow **Tests de charge** depuis `release/*` contre la
-préproduction. Chaque run produit un artefact conservé 30 jours contenant `k6.log`,
+Chaque run du workflow **Tests de charge** conserve 30 jours un artefact contenant `k6.log`,
 `k6-summary.json` et `load-evidence.json`.
 
-| Profil     | Run GitHub Actions | Erreurs | Checks | p95 | p99 | Replicas | Vélocité |
-| ---------- | ------------------ | ------: | -----: | --: | --: | -------: | -------: |
-| `baseline` | [`—`][1]           |       — |      — |   — |   — |        — |      —/8 |
-| `scale`    | [`—`][2]           |       — |      — |   — |   — |        — |      —/8 |
-| `stress`   | [`—`][3]           |       — |      — |   — |   — |        — |      —/8 |
+| Profil     | Run GitHub Actions | Erreurs | Checks | p95    | p99      | Replicas | Vélocité |
+| ---------- | ------------------ | ------: | -----: | ------ | -------- | -------: | -------: |
+| `baseline` | [`33769001273`][1] |     0 % |  100 % | 153 ms | 167 ms   |        1 |      5/8 |
+| `scale`    | [`33769498092`][2] |     0 % |  100 % | 451 ms | 595 ms   |       10 |      5/8 |
+| `stress`   | [`33769016355`][3] |     0 % |  100 % | 843 ms | 1 102 ms |       10 |      5/8 |
 
-Les artefacts bruts téléchargés pour vérification restent ignorés par Git. La documentation ne
-retient que les métriques stables, les identifiants de runs et l'interprétation reproductible.
+Sous `scale`, les cinq déclenchements de vélocité ont traversé cinq replicas distincts ; sous
+`stress`, sept. Les artefacts bruts téléchargés pour vérification restent ignorés par Git.
 
-[1]: https://github.com/ghassenzaouali/transaction-risk-gate/actions/runs/REMPLACER-baseline
-[2]: https://github.com/ghassenzaouali/transaction-risk-gate/actions/runs/REMPLACER-scale
-[3]: https://github.com/ghassenzaouali/transaction-risk-gate/actions/runs/REMPLACER-stress
+[1]: https://github.com/ghassenzaouali/transaction-risk-gate/actions/runs/33769001273
+[2]: https://github.com/ghassenzaouali/transaction-risk-gate/actions/runs/33769498092
+[3]: https://github.com/ghassenzaouali/transaction-risk-gate/actions/runs/33769016355
