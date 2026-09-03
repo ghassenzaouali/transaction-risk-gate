@@ -225,3 +225,35 @@ jobs:
         if: github.event_name == 'push'
         run: >-
           snyk monitor --all-projects --org="$SNYK_ORG" --target-reference="${{ github.ref_name }}"
+
+  infrastructure:
+    name: Infrastructure
+    needs:
+      - governance
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Récupérer le dépôt
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Installer Bicep épinglé
+        uses: ./.github/actions/setup-bicep
+
+      - name: Compiler les templates Bicep
+        shell: bash
+        run: |
+          "$BICEP_BIN" build infra/platform.bicep --stdout >/dev/null
+          "$BICEP_BIN" build infra/apps.bicep --stdout >/dev/null
+
+      - name: Valider la syntaxe des runbooks Bash
+        run: bash -n infra/*.sh
+
+      - name: Tester les outils de smoke et de promotion
+        run: npm run operations:test
+
+      - name: Valider la topologie Docker Compose
+        shell: bash
+        run: |
+          cp .env.example .env
+          trap 'rm -f .env' EXIT
+          docker compose --env-file .env config --quiet
