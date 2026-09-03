@@ -35,15 +35,17 @@ précédentes. Cette action cible un environnement GitHub protégé et utilise A
 
 ## Résultats vérifiés
 
-<!-- À COMPLÉTER en TRG-9, à partir des exécutions réelles de ce dépôt. -->
+Le 3 septembre 2026, le runbook Compose (`node scripts/failure/redis-outage.mjs`) a produit
+`redis_failure_recovery_passed` : décision dégradée `REVIEW` de score 30 pendant l'arrêt de Redis,
+décision rétablie `APPROVED` après redémarrage et sonde half-open du circuit breaker, readiness
+finale `normal`. Le smoke préalable confirmait santé, cinq règles, Redis disponible et rejeu
+idempotent. La politique fail-safe n'a produit aucune approbation pendant la panne.
 
-Panne Redis locale (`node scripts/failure/redis-outage.mjs`) : consigner la décision dégradée
-observée (`REVIEW`, score au moins 30, `degraded: true`), la décision rétablie (`APPROVED`) et la
-readiness finale (`normal`).
-
-Rollback de déploiement : consigner le [run du rollback][1] réel en intégration (bascule du trafic
-vers les révisions précédentes, smoke test rejoué, workflow maintenu en échec) puis le [run de
-restauration][2] explicite des révisions courantes. La production n'est jamais ciblée.
+Rollback de déploiement : le [run du rollback][1] rejouera en intégration la bascule du trafic vers
+les révisions précédentes, le smoke test sur l'état restauré et le maintien du workflow en échec ;
+le [run de restauration][2] rétablira ensuite explicitement les révisions courantes. Ces deux runs
+sont déclenchés via `workflow_dispatch` de `deploy.yml`, une fois le workflow présent sur `main`. La
+production n'est jamais ciblée.
 
 [1]: https://github.com/ghassenzaouali/transaction-risk-gate/actions/runs/REMPLACER-rollback
 [2]: https://github.com/ghassenzaouali/transaction-risk-gate/actions/runs/REMPLACER-restauration

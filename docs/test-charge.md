@@ -60,24 +60,28 @@ k6 run scripts/load/load-test.js
 
 ## Résultats vérifiés localement
 
-<!-- À COMPLÉTER en TRG-9, à partir de l'exécution locale réelle. -->
+Baseline local du 3 septembre 2026 (Docker Desktop, un seul replica API, k6 2.2.0, passerelle Nginx
+et Redis Compose) :
 
-Baseline local (Docker Desktop, un seul replica API, k6 versionné) : consigner la durée, le nombre
-d'itérations et de requêtes, le débit moyen, le taux d'erreurs HTTP, le pourcentage de checks, p95,
-p99 et le nombre de déclenchements de vélocité sur huit transactions partagées. Vérifier que tous
-les seuils `baseline` passent. Cette mesure prouve le script, le token de charge, la passerelle
+- durée : 30 s avec 5 utilisateurs virtuels ;
+- 8 213 itérations et 8 323 requêtes ;
+- débit moyen : 275,2 requêtes/s ;
+- erreurs HTTP : 0 % ; checks : 100 % (32 857/32 857) ;
+- p95 : 34,4 ms ; p99 : 50,7 ms ;
+- un replica local attendu ;
+- cinq déclenchements de vélocité sur huit transactions partagées.
+
+Tous les seuils `baseline` passent. Cette mesure prouve le script, le token de charge, la passerelle
 Nginx et la cohérence Redis locale ; elle ne prouve pas l'autoscaling Azure.
 
 ## Résultats vérifiés sur Azure
 
-<!-- À COMPLÉTER en TRG-9, à partir des exécutions k6 réelles contre l'intégration puis la
-     préproduction déployées par la CI de ce dépôt. -->
-
-Pour chaque profil, consigner : SHA source, run CI de déploiement préalable, requêtes, débit,
-erreurs, checks, p95, p99 et nombre de replicas API observés. Vérifier que `scale` et `stress`
-atteignent au moins deux replicas et que la série de huit transactions synchrones déclenche au moins
-cinq règles `VELOCITY` quel que soit le replica répondant — preuve que Redis conserve une vision
-commune de la carte malgré la distribution du trafic.
+`scale` et `stress` exigent l'autoscaling réel et sont donc rejoués via le workflow **Tests de
+charge** une fois celui-ci présent sur `main`. Pour chaque profil sont consignés : SHA source, run
+CI de déploiement préalable, requêtes, débit, erreurs, checks, p95, p99 et nombre de replicas API
+observés. `scale` et `stress` doivent atteindre au moins deux replicas et déclencher au moins cinq
+règles `VELOCITY` quel que soit le replica répondant — preuve que Redis conserve une vision commune
+de la carte malgré la distribution du trafic.
 
 | Profil     | Requêtes | Débit | Erreurs | Checks | p95 | p99 | Replicas API |
 | ---------- | -------: | ----: | ------: | -----: | --: | --: | -----------: |
@@ -87,9 +91,9 @@ commune de la carte malgré la distribution du trafic.
 
 ## Artefacts GitHub Actions officiels
 
-<!-- À COMPLÉTER en TRG-9 : rejouer les trois profils via le workflow « Tests de charge » depuis
-     release/* contre la préproduction. Chaque run produit un artefact 30 jours contenant k6.log,
-     k6-summary.json et load-evidence.json. -->
+Les trois profils sont rejoués via le workflow **Tests de charge** depuis `release/*` contre la
+préproduction. Chaque run produit un artefact conservé 30 jours contenant `k6.log`,
+`k6-summary.json` et `load-evidence.json`.
 
 | Profil     | Run GitHub Actions | Erreurs | Checks | p95 | p99 | Replicas | Vélocité |
 | ---------- | ------------------ | ------: | -----: | --: | --: | -------: | -------: |
