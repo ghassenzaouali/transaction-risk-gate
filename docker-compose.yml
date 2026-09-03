@@ -1,0 +1,98 @@
+name: transaction-risk-gate
+
+# Reproduit localement l'architecture cible : le navigateur ne parle qu'à `web`
+# (nginx), qui sert le tableau de bord et relaie `/api` vers `api` sur le réseau
+# interne. `api` n'expose aucun port vers l'hôte — comme en production, où il est
+# en ingress interne.
+
+services:
+  redis:
+    image: redis:8.10.1-alpine3.23@sha256:becdda6c7f4b3fb42e42fd7f120bbf5c54c4caaaf16f26da24e4563d2c1f0576
+    user: "999:1000"
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /data
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    networks:
+      - private
+
+  api:
+    build: ./api
+    # Toute la configuration vient de .env (cp .env.example .env).
+    env_file: .env
+    depends_on:
+      redis:
+        condition: service_healthy
+    # L'arrêt gracieux peut prendre SHUTDOWN_DELAY_MS + SHUTDOWN_TIMEOUT_MS (15 s
+    # ici). Le défaut de Docker (10 s, parfois moins) tuerait le drainage en
+    # cours ; 30 s = la période de grâce d'Azure Container Apps.
+    stop_grace_period: 30s
+    healthcheck:
+      # L'image n'a ni curl ni wget ; elle a node, et Node 22 a fetch.
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/health').then(r => process.exit(r.ok ? 0 : 1), () =>
+          process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    networks:
+      - private
+
+  web:
+    build: ./web
+    environment:
+      # Injectée par nginx dans les requêtes /api. Vient de .env, jamais du dépôt.
+      API_KEY: ${API_KEY:?renseigne API_KEY dans .env (cp .env.example .env)}
+      # Cible du proxy : nom du service sur le réseau compose.
+      API_UPSTREAM: api:3000
+      API_UPSTREAM_SCHEME: http
+    ports:
+      - "8080:8080"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8080/healthz >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    networks:
+      - edge
+      - private
+
+networks:
+  edge: {}
+  private:
+    internal: true
