@@ -1,0 +1,358 @@
+openapi: 3.1.0
+info:
+  title: Transaction Risk Gate API
+  version: 1.0.0
+  description: >-
+    Contrat de l'API interne de décision. Le web public relaie /api/* et /ready, puis injecte
+    X-API-Key côté serveur. Les données sont synthétiques et la v1 accepte uniquement EUR.
+servers:
+  - url: http://localhost:3000
+    description: API lancée directement en local
+tags:
+  - name: Decision
+  - name: Policy
+  - name: Operations
+paths:
+  /api/decisions:
+    post:
+      tags: [Decision]
+      summary: Évaluer une transaction synthétique
+      operationId: evaluateTransaction
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/RequestId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Transaction"
+      responses:
+        "200":
+          description: Décision normale ou fail-safe
+          headers:
+            X-Instance-Id:
+              $ref: "#/components/headers/InstanceId"
+            X-Request-Id:
+              $ref: "#/components/headers/RequestId"
+            X-Degraded-Mode:
+              description: Présent avec true uniquement lorsque Redis est indisponible.
+              schema:
+                type: string
+                const: "true"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DecisionResponse"
+        "400":
+          description: Transaction, idempotence, request id ou query invalide
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Secret interservice absent ou invalide
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Idempotency-Key déjà associée à un autre payload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          description: Payload supérieur à la limite configurée
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "415":
+          description: Content-Type différent de application/json
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: Limite de requêtes dépassée
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/rules:
+    get:
+      tags: [Policy]
+      summary: Lire la politique de risque active
+      operationId: getRules
+      security:
+        - ApiKeyAuth: []
+      responses:
+        "200":
+          description: Cinq règles dont les poids totalisent 100
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RulesResponse"
+        "401":
+          description: Secret interservice absent ou invalide
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /health:
+    get:
+      tags: [Operations]
+      summary: Vérifier la liveness du processus API
+      operationId: health
+      responses:
+        "200":
+          description: Processus vivant
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    const: ok
+  /ready:
+    get:
+      tags: [Operations]
+      summary: Lire la readiness et le mode Redis
+      operationId: readiness
+      responses:
+        "200":
+          description: Service disponible en mode normal ou fail-safe
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Readiness"
+        "503":
+          description: Arrêt gracieux en cours
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    const: shutting_down
+  /metrics:
+    get:
+      tags: [Operations]
+      summary: Exposer les métriques Prometheus sur le réseau privé
+      operationId: metrics
+      responses:
+        "200":
+          description: Exposition Prometheus
+          content:
+            text/plain:
+              schema:
+                type: string
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: Secret interservice injecté par Nginx, jamais livré au navigateur.
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: 8 à 128 caractères sûrs ; même clé et même payload rejouent la réponse.
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 128
+        pattern: "^[A-Za-z0-9._:-]+$"
+    RequestId:
+      name: X-Request-Id
+      in: header
+      required: false
+      description: Corrélation facultative, remplacée par un UUID si absente.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 64
+        pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$"
+  headers:
+    InstanceId:
+      description: Identifiant du replica API ayant traité la requête.
+      schema:
+        type: string
+    RequestId:
+      description: Identifiant de corrélation accepté ou généré.
+      schema:
+        type: string
+  schemas:
+    Transaction:
+      type: object
+      additionalProperties: false
+      required: [transactionId, cardId, amount, currency, country, channel, merchantCategory]
+      properties:
+        transactionId:
+          type: string
+          minLength: 1
+          maxLength: 64
+          examples: [txn-demo-001]
+        cardId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          examples: [card-synthetic-001]
+        amount:
+          type: number
+          exclusiveMinimum: 0
+          maximum: 1000000000
+          examples: [125.5]
+        currency:
+          type: string
+          const: EUR
+        country:
+          type: string
+          pattern: "^[A-Za-z]{2}$"
+          examples: [FR]
+        channel:
+          type: string
+          enum: [online, in_store]
+        merchantCategory:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: "^[A-Za-z][A-Za-z0-9_]*$"
+          examples: [grocery]
+    Reason:
+      type: object
+      additionalProperties: false
+      required: [rule, weight, detail]
+      properties:
+        rule:
+          type: string
+          enum:
+            - VELOCITY
+            - COUNTRY_RISK
+            - AMOUNT_THRESHOLD
+            - HIGH_RISK_MERCHANT
+            - CARD_NOT_PRESENT
+            - RISK_CONTEXT_UNAVAILABLE
+        weight:
+          type: integer
+          minimum: 0
+          maximum: 30
+        detail:
+          type: string
+    DecisionResponse:
+      type: object
+      additionalProperties: false
+      required: [decisionId, decision, score, reasons, evaluatedAt, degraded]
+      properties:
+        decisionId:
+          type: string
+          pattern: "^dec_[0-9a-f-]+$"
+        decision:
+          type: string
+          enum: [APPROVED, REVIEW, REJECTED]
+        score:
+          type: integer
+          minimum: 0
+          maximum: 100
+        reasons:
+          type: array
+          items:
+            $ref: "#/components/schemas/Reason"
+        evaluatedAt:
+          type: string
+          format: date-time
+        degraded:
+          type: boolean
+    RulesResponse:
+      type: object
+      additionalProperties: false
+      required: [currency, maxScore, scoreBands, rules]
+      properties:
+        currency:
+          type: string
+          const: EUR
+        maxScore:
+          type: integer
+          const: 100
+        scoreBands:
+          type: object
+          required: [approved, review, rejected]
+          properties:
+            approved:
+              $ref: "#/components/schemas/ScoreBand"
+            review:
+              $ref: "#/components/schemas/ScoreBand"
+            rejected:
+              $ref: "#/components/schemas/ScoreBand"
+        rules:
+          type: array
+          minItems: 5
+          maxItems: 5
+          items:
+            type: object
+            required: [rule, weight, parameters]
+            properties:
+              rule:
+                type: string
+              weight:
+                type: integer
+              parameters:
+                type: object
+                additionalProperties: true
+    ScoreBand:
+      type: object
+      additionalProperties: false
+      required: [min, max]
+      properties:
+        min:
+          type: integer
+        max:
+          type: integer
+    Readiness:
+      type: object
+      additionalProperties: false
+      required: [status, mode, dependencies]
+      properties:
+        status:
+          type: string
+          const: ready
+        mode:
+          type: string
+          enum: [normal, degraded]
+        dependencies:
+          type: object
+          additionalProperties: false
+          required: [redis]
+          properties:
+            redis:
+              type: string
+              enum: [unknown, available, unavailable]
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+        details:
+          type: array
+          items:
+            type: object
+            required: [path, message]
+            properties:
+              path:
+                type: string
+              message:
+                type: string
