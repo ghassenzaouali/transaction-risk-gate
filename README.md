@@ -9,23 +9,24 @@ de démontrer comment concevoir, tester, sécuriser, livrer et exploiter un serv
 
 ## État vérifié
 
-| Élément                   | État                                                           |
-| ------------------------- | -------------------------------------------------------------- |
-| Domaine et API            | implémentés et testés                                          |
-| Couverture (lignes)       | API 95,29 %, domaine 99,20 %, web 99,51 %                      |
-| SonarCloud, Snyk et Trivy | bloquants et verts sur toute PR vers une branche durable       |
-| Images Docker et Compose  | images non-root, smoke local validé                            |
-| Déploiement Azure         | OIDC, ACR par digest, intégration déployée et smoke testée     |
-| Charge et panne           | baseline k6 local 0 % d'erreur ; panne Redis fail-safe validée |
+| Élément                   | État                                                                              |
+| ------------------------- | --------------------------------------------------------------------------------- |
+| Domaine et API            | implémentés et testés                                                             |
+| Couverture (lignes)       | API 95,29 %, domaine 99,20 %, web 99,51 %                                         |
+| SonarCloud, Snyk et Trivy | bloquants et verts sur toute PR vers une branche durable                          |
+| Images Docker et Compose  | images non-root, smoke local validé                                               |
+| Déploiement Azure         | OIDC, ACR par digest, promu jusqu'en production, smoke testé à chaque étape       |
+| Charge et panne           | k6 baseline/scale/stress 0 % d'erreur sur Azure ; panne Redis et rollback validés |
 
 Les résultats réels sont consignés dans [les tests de charge](docs/test-charge.md),
 [les scénarios de panne](docs/test-panne.md) et [les preuves de livraison](docs/livraison.md).
 
-Intégration vérifiée :
+Production : <https://trg-web.agreeablegrass-4df52008.swedencentral.azurecontainerapps.io>.
+Intégration :
 <https://trg-web-integration.agreeablegrass-4df52008.swedencentral.azurecontainerapps.io>.
 
 Préproduction et production sont déployées par promotion du même digest depuis `release/*` et
-`main`.
+`main`, sans reconstruction.
 
 ## Architecture
 
