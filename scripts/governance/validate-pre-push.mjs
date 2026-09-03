@@ -71,10 +71,16 @@ runNpm(["run", "docs:lint"]);
 run(process.execPath, ["scripts/governance/validate-repository.mjs"]);
 run(process.execPath, ["--test", "scripts/governance/tests/git-policy.test.mjs"]);
 
+const root = git("rev-parse", "--show-toplevel");
+
 if (process.env.TRG_SKIP_TESTS_PRE_PUSH !== "1") {
-  runNpm(["--prefix", "api", "run", "build"]);
-  runNpm(["--prefix", "api", "test"]);
-  runNpm(["--prefix", "web", "test"]);
+  if (fs.existsSync(path.join(root, "api", "package.json"))) {
+    runNpm(["--prefix", "api", "run", "build"]);
+    runNpm(["--prefix", "api", "test"]);
+  }
+  if (fs.existsSync(path.join(root, "web", "package.json"))) {
+    runNpm(["--prefix", "web", "test"]);
+  }
 }
 
 console.log(`Pre-push validation passed for ${branch}.`);
