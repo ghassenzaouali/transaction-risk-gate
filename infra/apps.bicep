@@ -8,8 +8,8 @@ targetScope = 'resourceGroup'
 @description('Environnement logique associé à la branche Git durable.')
 param stage string
 
-@description('Nom de l’environnement Azure Container Apps existant.')
-param containerAppsEnvironmentName string
+@description('ID complet de l’environnement Azure Container Apps partagé (mutualisé, cross-RG).')
+param containerAppsEnvironmentId string
 
 @description('Nom du registre ACR existant.')
 param containerRegistryName string
@@ -78,10 +78,6 @@ var webName = '${webBaseName}${suffix}'
 var redisName = '${redisBaseName}${suffix}'
 var redisImage = 'docker.io/library/redis:8.10.1-alpine3.23@sha256:becdda6c7f4b3fb42e42fd7f120bbf5c54c4caaaf16f26da24e4563d2c1f0576'
 var redisUrl = 'redis://:${redisPassword}@${redisName}:6379'
-var containerAppsEnvironmentId = resourceId(
-  'Microsoft.App/managedEnvironments',
-  containerAppsEnvironmentName
-)
 var runtimeIdentityId = resourceId(
   'Microsoft.ManagedIdentity/userAssignedIdentities',
   runtimeIdentityName
