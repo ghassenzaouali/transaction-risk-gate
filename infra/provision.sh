@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Provisionne uniquement la plateforme partagée : resource group, Log Analytics,
-# ACR, identité AcrPull et environnement Container Apps. Aucun build, tag mutable
-# ou secret applicatif n'est manipulé ici.
+# Provisionne la partie propre au dépôt : resource group, ACR et identité AcrPull.
+# L'environnement Azure Container Apps est mutualisé (1/abonnement sur « Azure for
+# Students ») : il est seulement référencé, jamais créé ici. Aucun build, tag
+# mutable ou secret applicatif n'est manipulé.
 
 set -euo pipefail
 
@@ -13,10 +14,8 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 LOCATION="${AZURE_LOCATION:-${LOCATION:-swedencentral}}"
 RG="${AZURE_RESOURCE_GROUP:-${RG:-rg-transaction-risk-gate}}"
-ENVIRONMENT="${AZURE_CONTAINERAPPS_ENVIRONMENT:-${ENVIRONMENT:-cae-transaction-risk-gate}}"
-LOG_WORKSPACE="${AZURE_LOG_WORKSPACE:-${LOG_WORKSPACE:-log-transaction-risk-gate}}"
+SHARED_ENV_ID="${AZURE_CONTAINERAPPS_ENVIRONMENT_ID:?ID complet de environnement mutualise requis}"
 RUNTIME_IDENTITY="${AZURE_RUNTIME_IDENTITY:-${RUNTIME_IDENTITY:-id-transaction-risk-gate-runtime}}"
-LOG_RETENTION_DAYS="${LOG_RETENTION_DAYS:-30}"
 PROVISION_MODE="${PROVISION_MODE:-apply}"
 
 case "$PROVISION_MODE" in
@@ -29,8 +28,7 @@ az config set extension.use_dynamic_install=yes_without_prompt --only-show-error
 for namespace in \
   Microsoft.App \
   Microsoft.ContainerRegistry \
-  Microsoft.ManagedIdentity \
-  Microsoft.OperationalInsights; do
+  Microsoft.ManagedIdentity; do
   state="$(az provider show --namespace "$namespace" --query registrationState -o tsv 2>/dev/null || true)"
   if [ "$state" != "Registered" ]; then
     az provider register --namespace "$namespace" --wait --output none
@@ -42,9 +40,9 @@ az group create --name "$RG" --location "$LOCATION" --output none
 SUBSCRIPTION_ID="$(az account show --query id -o tsv)"
 ACR_NAME="${AZURE_CONTAINER_REGISTRY:-${ACR_NAME:-trgghz$(printf '%s' "$SUBSCRIPTION_ID" | tr -d '-' | cut -c1-12)}}"
 
-# La préparation peut déjà avoir créé une attribution AcrPull pendant la
-# préparation. ARM refuserait un doublon portant un autre UUID : on l'adopte au
-# lieu de la recréer. Une plateforme neuve conserve le rôle déclaratif Bicep.
+# La préparation peut déjà avoir créé une attribution AcrPull. ARM refuserait un
+# doublon portant un autre UUID : on l'adopte au lieu de la recréer. Une
+# plateforme neuve conserve le rôle déclaratif Bicep.
 CREATE_ACR_PULL_ROLE_ASSIGNMENT=true
 if az acr show --name "$ACR_NAME" --resource-group "$RG" --output none 2>/dev/null \
   && az identity show --name "$RUNTIME_IDENTITY" --resource-group "$RG" --output none 2>/dev/null; then
@@ -63,10 +61,8 @@ deployment_arguments=(
   --parameters
   location="$LOCATION"
   containerRegistryName="$ACR_NAME"
-  containerAppsEnvironmentName="$ENVIRONMENT"
-  logAnalyticsWorkspaceName="$LOG_WORKSPACE"
+  sharedContainerAppsEnvironmentId="$SHARED_ENV_ID"
   runtimeIdentityName="$RUNTIME_IDENTITY"
-  logRetentionDays="$LOG_RETENTION_DAYS"
   createAcrPullRoleAssignment="$CREATE_ACR_PULL_ROLE_ASSIGNMENT"
 )
 
@@ -77,7 +73,7 @@ fi
 
 az deployment group create "${deployment_arguments[@]}" --output none
 
-echo "✓ Plateforme Azure provisionnée de façon idempotente"
+echo "✓ Plateforme du dépôt provisionnée de façon idempotente"
 echo "  resource group : $RG"
-echo "  environnement  : $ENVIRONMENT"
+echo "  environnement  : $SHARED_ENV_ID (mutualisé)"
 echo "  registre       : $ACR_NAME.azurecr.io"

@@ -19,7 +19,7 @@ REDIS_PASSWORD="${REDIS_PASSWORD:?REDIS_PASSWORD est requis}"
 LOAD_TEST_TOKEN="${LOAD_TEST_TOKEN:-}"
 
 RG="${AZURE_RESOURCE_GROUP:-${RG:-rg-transaction-risk-gate}}"
-ENVIRONMENT="${AZURE_CONTAINERAPPS_ENVIRONMENT:-${ENVIRONMENT:-cae-transaction-risk-gate}}"
+ENVIRONMENT_ID="${AZURE_CONTAINERAPPS_ENVIRONMENT_ID:?ID complet de environnement mutualise requis}"
 ACR_NAME="${AZURE_CONTAINER_REGISTRY:?AZURE_CONTAINER_REGISTRY est requis}"
 RUNTIME_IDENTITY="${AZURE_RUNTIME_IDENTITY:-${RUNTIME_IDENTITY:-id-transaction-risk-gate-runtime}}"
 API_BASE_NAME="${AZURE_API_APP_NAME:-api}"
@@ -67,7 +67,7 @@ deployment_arguments=(
   --template-file "$APPS_TEMPLATE_FILE"
   --parameters
   stage="$STAGE"
-  containerAppsEnvironmentName="$ENVIRONMENT"
+  containerAppsEnvironmentId="$ENVIRONMENT_ID"
   containerRegistryName="$ACR_NAME"
   runtimeIdentityName="$RUNTIME_IDENTITY"
   apiBaseName="$API_BASE_NAME"
