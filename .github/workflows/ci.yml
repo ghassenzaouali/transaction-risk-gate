@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - develop
+      - main
+      - "release/**"
+  push:
+    branches:
+      - develop
+      - main
+      - "release/**"
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  governance:
+    name: Gouvernance
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Appliquer les labels de zone
+        if: github.event_name == 'pull_request'
+        uses: actions/labeler@bf12e9b00b37c5c0ca2b87b79b2daf7891dbda13 # v7.0.0
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Récupérer le dépôt
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Installer Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Installer les outils du dépôt
+        run: npm ci --ignore-scripts
+
+      - name: Tester les règles de gouvernance
+        run: node --test scripts/governance/tests/git-policy.test.mjs
+
+      - name: Valider le dépôt
+        run: node scripts/governance/validate-repository.mjs
+
+      - name: Valider la pull request
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/governance/validate-pull-request.mjs
+
+      - name: Installer pre-commit
+        run: python3 -m pip install --disable-pip-version-check pre-commit==4.6.0
+
+      - name: Exécuter les contrôles pre-commit et Gitleaks
+        env:
+          PRE_COMMIT_HOME: ${{ runner.temp }}/pre-commit
+          # Le hook empêche les commits locaux directs. Sur un push déjà fusionné
+          # vers une branche durable, le ruleset GitHub constitue l'autorité.
+          SKIP: no-commit-to-branch
+        run: pre-commit run --all-files --show-diff-on-failure

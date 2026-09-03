@@ -1,0 +1,29 @@
+name: Setup Bicep
+description: Télécharge Bicep Linux épinglé et vérifie son SHA-256 officiel
+
+inputs:
+  version:
+    description: Version Bicep avec préfixe v
+    required: false
+    default: v0.46.1
+  sha256:
+    description: SHA-256 de bicep-linux-x64
+    required: false
+    default: 3e011d629ea4311b7a7dd8f0040ab2b1a072ea4ff5d02cb75e0e55a9a6703fb9
+
+runs:
+  using: composite
+  steps:
+    - name: Télécharger et vérifier Bicep
+      shell: bash
+      env:
+        BICEP_VERSION: ${{ inputs.version }}
+        BICEP_SHA256: ${{ inputs.sha256 }}
+      run: |
+        binary="${RUNNER_TEMP}/bicep"
+        curl --fail --location --silent --show-error \
+          --output "$binary" \
+          "https://github.com/Azure/bicep/releases/download/${BICEP_VERSION}/bicep-linux-x64"
+        echo "${BICEP_SHA256}  ${binary}" | sha256sum --check
+        chmod +x "$binary"
+        echo "BICEP_BIN=$binary" >> "$GITHUB_ENV"

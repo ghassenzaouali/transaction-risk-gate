@@ -1,0 +1,43 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: Publier la GitHub Release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Récupérer le tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Vérifier version, source et digests
+        env:
+          AZURE_CONTAINER_REGISTRY: ${{ vars.AZURE_CONTAINER_REGISTRY }}
+        run: |
+          node scripts/release/manifest.mjs .release/manifest.json
+          test "${{ github.ref_name }}" = "$(node -p "require('./.release/manifest.json').version")"
+
+      - name: Créer une release traçable
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          api_image="$(node -p "require('./.release/manifest.json').apiImage")"
+          web_image="$(node -p "require('./.release/manifest.json').webImage")"
+          source_sha="$(node -p "require('./.release/manifest.json').sourceSha")"
+          notes="$(printf 'Source validée : %s\n\nAPI : %s\n\nWeb : %s\n\nLes limites et la procédure de rollback sont documentées dans le dépôt.' "$source_sha" "$api_image" "$web_image")"
+          gh release create "$GITHUB_REF_NAME" --verify-tag --title "Transaction Risk Gate $GITHUB_REF_NAME" \
+            --notes "$notes"

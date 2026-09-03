@@ -1,0 +1,104 @@
+name: Tests de charge
+
+on:
+  workflow_dispatch:
+    inputs:
+      stage:
+        description: Environnement hors production à tester
+        required: true
+        type: choice
+        options:
+          - integration
+          - preproduction
+      profile:
+        description: Profil k6
+        required: true
+        type: choice
+        options:
+          - baseline
+          - scale
+          - stress
+
+concurrency:
+  group: load-${{ inputs.stage }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  load:
+    name: k6 ${{ inputs.profile }} sur ${{ inputs.stage }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment:
+      name: ${{ inputs.stage }}
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      STAGE: ${{ inputs.stage }}
+      LOAD_PROFILE: ${{ inputs.profile }}
+      LOAD_TEST_TOKEN: ${{ secrets.LOAD_TEST_TOKEN }}
+      AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+      AZURE_WEB_APP_NAME: ${{ vars.AZURE_WEB_APP_NAME }}
+    steps:
+      - name: Récupérer le dépôt
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Installer Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+
+      - name: Installer k6 épinglé
+        uses: grafana/setup-k6-action@db07bd9765aac508ef18982e52ab937fe633a065 # v1.2.1
+        with:
+          k6-version: 2.2.0
+
+      - name: S’authentifier à Azure par OIDC
+        uses: Azure/login@7ddb5af1ef8758cf1353cf3b42f940aee27ba21c # v3.0.2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Résoudre la cible hors production
+        id: target
+        shell: bash
+        run: |
+          test "$STAGE" = "integration" -o "$STAGE" = "preproduction"
+          test -n "$LOAD_TEST_TOKEN"
+          web_app="${AZURE_WEB_APP_NAME:-web}-${STAGE}"
+          fqdn="$(az containerapp show --resource-group "$AZURE_RESOURCE_GROUP" --name "$web_app" --query properties.configuration.ingress.fqdn --output tsv)"
+          test -n "$fqdn"
+          echo "url=https://$fqdn" >> "$GITHUB_OUTPUT"
+
+      - name: Exécuter le profil et conserver la sortie brute
+        shell: bash
+        env:
+          PUBLIC_BASE_URL: ${{ steps.target.outputs.url }}
+          K6_SUMMARY_PATH: artifacts/k6-summary.json
+        run: |
+          mkdir -p artifacts
+          set -o pipefail
+          k6 run scripts/load/load-test.js 2>&1 | tee artifacts/k6.log
+
+      - name: Construire la preuve exploitable
+        shell: bash
+        run: |
+          node scripts/load/evidence.mjs artifacts/k6.log artifacts/k6-summary.json artifacts/load-evidence.json "$LOAD_PROFILE"
+          {
+            echo "### Charge $LOAD_PROFILE sur $STAGE"
+            echo '```json'
+            cat artifacts/load-evidence.json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publier les preuves k6
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: k6-${{ inputs.stage }}-${{ inputs.profile }}-${{ github.run_id }}
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 30
