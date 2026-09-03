@@ -1,0 +1,30 @@
+#!/bin/sh
+set -eu
+
+stage="${1:?hook stage is required}"
+shift
+
+repository_root="$(git rev-parse --show-toplevel)"
+export PRE_COMMIT_HOME="${repository_root}/.local/cache/pre-commit"
+
+windows_pre_commit="${repository_root}/.local/tools/pre-commit/Scripts/pre-commit.exe"
+posix_pre_commit="${repository_root}/.local/tools/pre-commit/bin/pre-commit"
+
+if [ -x "${windows_pre_commit}" ]; then
+  pre_commit="${windows_pre_commit}"
+elif [ -x "${posix_pre_commit}" ]; then
+  pre_commit="${posix_pre_commit}"
+else
+  printf '%s\n' \
+    "Project-local pre-commit is missing. Run scripts/dev/bootstrap-hooks.ps1 or scripts/dev/bootstrap-hooks.sh." >&2
+  exit 1
+fi
+
+if [ "${stage}" = "commit-msg" ]; then
+  message_file="${1:?commit message file is required}"
+  exec "${pre_commit}" run \
+    --hook-stage commit-msg \
+    --commit-msg-filename "${message_file}"
+fi
+
+exec "${pre_commit}" run --hook-stage "${stage}"
