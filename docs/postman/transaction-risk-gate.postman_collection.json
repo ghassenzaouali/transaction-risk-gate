@@ -1,0 +1,210 @@
+{
+  "info": {
+    "_postman_id": "60f49bed-67b5-438e-a8f8-34e58f045411",
+    "name": "Transaction Risk Gate",
+    "description": "Démonstration via la passerelle web. OpenAPI reste le contrat de référence.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "if (!pm.collectionVariables.get('runId')) {",
+          "  pm.collectionVariables.set('runId', pm.variables.replaceIn('{{$guid}}'));",
+          "}"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "Opérations",
+      "item": [
+        {
+          "name": "Liveness web",
+          "request": { "method": "GET", "url": "{{baseUrl}}/healthz" },
+          "event": [
+            {
+              "listen": "test",
+              "script": { "exec": ["pm.test('HTTP 200', () => pm.response.to.have.status(200));"] }
+            }
+          ]
+        },
+        {
+          "name": "Readiness API",
+          "request": { "method": "GET", "url": "{{baseUrl}}/ready" },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('API prête', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(pm.response.code).to.eql(200);",
+                  "  pm.expect(body.status).to.eql('ready');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Règles actives",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/rules" },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Cinq règles EUR totalisent 100', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.currency).to.eql('EUR');",
+                  "  pm.expect(body.rules).to.have.length(5);",
+                  "  pm.expect(body.rules.reduce((sum, rule) => sum + rule.weight, 0)).to.eql(100);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Décisions",
+      "item": [
+        {
+          "name": "APPROVED",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "approved-{{runId}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"transactionId\": \"approved-{{runId}}\",\n  \"cardId\": \"approved-card-{{runId}}\",\n  \"amount\": 20,\n  \"currency\": \"EUR\",\n  \"country\": \"FR\",\n  \"channel\": \"in_store\",\n  \"merchantCategory\": \"grocery\"\n}"
+            },
+            "url": "{{baseUrl}}/api/decisions"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Décision APPROVED normale', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.decision).to.eql('APPROVED');",
+                  "  pm.expect(body.degraded).to.eql(false);",
+                  "  pm.collectionVariables.set('approvedDecisionId', body.decisionId);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Rejeu idempotent",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "approved-{{runId}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"transactionId\": \"approved-{{runId}}\",\n  \"cardId\": \"approved-card-{{runId}}\",\n  \"amount\": 20,\n  \"currency\": \"EUR\",\n  \"country\": \"FR\",\n  \"channel\": \"in_store\",\n  \"merchantCategory\": \"grocery\"\n}"
+            },
+            "url": "{{baseUrl}}/api/decisions"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Même decisionId', () => {",
+                  "  pm.expect(pm.response.json().decisionId).to.eql(pm.collectionVariables.get('approvedDecisionId'));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Conflit idempotent",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "approved-{{runId}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"transactionId\": \"approved-{{runId}}\",\n  \"cardId\": \"approved-card-{{runId}}\",\n  \"amount\": 21,\n  \"currency\": \"EUR\",\n  \"country\": \"FR\",\n  \"channel\": \"in_store\",\n  \"merchantCategory\": \"grocery\"\n}"
+            },
+            "url": "{{baseUrl}}/api/decisions"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": ["pm.test('Conflit HTTP 409', () => pm.response.to.have.status(409));"]
+              }
+            }
+          ]
+        },
+        {
+          "name": "REVIEW",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "review-{{runId}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"transactionId\": \"review-{{runId}}\",\n  \"cardId\": \"review-card-{{runId}}\",\n  \"amount\": 20,\n  \"currency\": \"EUR\",\n  \"country\": \"US\",\n  \"channel\": \"online\",\n  \"merchantCategory\": \"grocery\"\n}"
+            },
+            "url": "{{baseUrl}}/api/decisions"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Décision REVIEW', () => pm.expect(pm.response.json().decision).to.eql('REVIEW'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "REJECTED",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "rejected-{{runId}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"transactionId\": \"rejected-{{runId}}\",\n  \"cardId\": \"rejected-card-{{runId}}\",\n  \"amount\": 2000,\n  \"currency\": \"EUR\",\n  \"country\": \"US\",\n  \"channel\": \"in_store\",\n  \"merchantCategory\": \"gambling\"\n}"
+            },
+            "url": "{{baseUrl}}/api/decisions"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Décision REJECTED à 60+', () => pm.expect(pm.response.json().decision).to.eql('REJECTED'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

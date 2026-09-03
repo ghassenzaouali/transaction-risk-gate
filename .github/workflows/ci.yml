@@ -1,0 +1,484 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - develop
+      - main
+      - "release/**"
+  push:
+    branches:
+      - develop
+      - main
+      - "release/**"
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  governance:
+    name: Gouvernance
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Appliquer les labels de zone
+        if: github.event_name == 'pull_request'
+        uses: actions/labeler@bf12e9b00b37c5c0ca2b87b79b2daf7891dbda13 # v7.0.0
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Récupérer le dépôt
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Installer Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Installer les outils du dépôt
+        run: npm ci --ignore-scripts
+
+      - name: Tester les règles de gouvernance
+        run: node --test scripts/governance/tests/git-policy.test.mjs
+
+      - name: Valider le dépôt
+        run: node scripts/governance/validate-repository.mjs
+
+      - name: Valider la pull request
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/governance/validate-pull-request.mjs
+
+      - name: Installer pre-commit
+        run: python3 -m pip install --disable-pip-version-check pre-commit==4.6.0
+
+      - name: Exécuter les contrôles pre-commit et Gitleaks
+        env:
+          PRE_COMMIT_HOME: ${{ runner.temp }}/pre-commit
+          # Le hook empêche les commits locaux directs. Sur un push déjà fusionné
+          # vers une branche durable, le ruleset GitHub constitue l'autorité.
+          SKIP: no-commit-to-branch
+        run: pre-commit run --all-files --show-diff-on-failure
+
+  tests:
+    name: Tests existants
+    needs:
+      - governance
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      redis:
+        image: redis:8.10.1-alpine3.23@sha256:becdda6c7f4b3fb42e42fd7f120bbf5c54c4caaaf16f26da24e4563d2c1f0576
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      REDIS_TEST_URL: redis://127.0.0.1:6379
+    steps:
+      - name: Récupérer le dépôt
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Installer Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            api/package-lock.json
+            web/package-lock.json
+
+      - name: Installer les dépendances
+        run: |
+          npm ci --prefix api
+          npm ci --prefix web
+
+      - name: Compiler l’API en TypeScript strict
+        run: npm run build --prefix api
+
+      - name: Tester et couvrir l’API à 80 % minimum
+        run: npm run test:coverage --prefix api
+
+      - name: Vérifier la cible renforcée du domaine à 90 %
+        run: npm run test:coverage:domain --prefix api
+
+      - name: Tester et couvrir le web à 80 % minimum
+        run: npm run test:coverage --prefix web
+
+      - name: Publier les rapports LCOV
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-reports
+          path: |
+            api/coverage/lcov.info
+            api/coverage/coverage-summary.json
+            web/coverage/lcov.info
+            web/coverage/coverage-summary.json
+          if-no-files-found: error
+          retention-days: 7
+
+  sonar:
+    name: SonarCloud
+    needs:
+      - tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      SONAR_HOST_URL: https://sonarcloud.io
+      SONAR_ORGANIZATION: ${{ vars.SONAR_ORGANIZATION }}
+      SONAR_PROJECT_KEY: ${{ vars.SONAR_PROJECT_KEY }}
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+    steps:
+      - name: Récupérer tout l’historique pour Sonar
+        if: github.event_name == 'pull_request' || github.ref_name == 'main'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Télécharger les rapports LCOV
+        if: github.event_name == 'pull_request' || github.ref_name == 'main'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: coverage-reports
+          path: .
+
+      - name: Vérifier la configuration SonarCloud
+        if: github.event_name == 'pull_request' || github.ref_name == 'main'
+        shell: bash
+        run: |
+          test -n "$SONAR_TOKEN"
+          test -n "$SONAR_ORGANIZATION"
+          test -n "$SONAR_PROJECT_KEY"
+
+      - name: Analyser et attendre le Quality Gate
+        if: github.event_name == 'pull_request' || github.ref_name == 'main'
+        uses: SonarSource/sonarqube-scan-action@22918119ff8e1ca75a623e15c8296b6ea4fbe28f # v8.2.1
+        with:
+          args: >-
+            -Dsonar.organization=${{ env.SONAR_ORGANIZATION }} -Dsonar.projectKey=${{
+            env.SONAR_PROJECT_KEY }} -Dsonar.qualitygate.wait=true -Dsonar.qualitygate.timeout=600
+
+      - name: Confirmer la promotion d’un candidat déjà analysé
+        if: github.event_name == 'push' && github.ref_name != 'main'
+        shell: bash
+        run: |
+          case "$GITHUB_REF" in
+            refs/heads/develop|refs/heads/release/*) ;;
+            *) echo "Branche de promotion inattendue: $GITHUB_REF" >&2; exit 1 ;;
+          esac
+          echo "Le Quality Gate a été imposé sur la PR ; main reste la branche principale Sonar."
+
+  infrastructure:
+    name: Infrastructure
+    needs:
+      - governance
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Récupérer le dépôt
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Installer Bicep épinglé
+        uses: ./.github/actions/setup-bicep
+
+      - name: Compiler les templates Bicep
+        shell: bash
+        run: |
+          "$BICEP_BIN" build infra/platform.bicep --stdout >/dev/null
+          "$BICEP_BIN" build infra/apps.bicep --stdout >/dev/null
+
+      - name: Valider la syntaxe des runbooks Bash
+        run: bash -n infra/*.sh
+
+      - name: Tester les outils de smoke et de promotion
+        run: npm run operations:test
+
+      - name: Valider la topologie Docker Compose
+        shell: bash
+        run: |
+          cp .env.example .env
+          trap 'rm -f .env' EXIT
+          docker compose --env-file .env config --quiet
+
+  snyk:
+    name: Snyk
+    needs:
+      - tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      SNYK_ORG: ${{ vars.SNYK_ORG }}
+      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+    steps:
+      - name: Récupérer tout l’historique
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Installer Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            api/package-lock.json
+            web/package-lock.json
+
+      - name: Vérifier la configuration Snyk
+        shell: bash
+        run: |
+          test -n "$SNYK_TOKEN"
+          test -n "$SNYK_ORG"
+
+      - name: Installer les dépendances et Snyk CLI épinglé
+        run: |
+          npm ci --ignore-scripts
+          npm ci --prefix api --ignore-scripts
+          npm ci --prefix web --ignore-scripts
+          npm install --global snyk@1.1307.0
+
+      - name: Scanner les dépendances avec Snyk Open Source
+        run: snyk test --all-projects --org="$SNYK_ORG" --severity-threshold=high
+
+      - name: Scanner le code avec Snyk Code
+        run: snyk code test . --org="$SNYK_ORG" --severity-threshold=high
+
+      - name: Publier l’état Snyk des branches durables
+        if: github.event_name == 'push'
+        run: >-
+          snyk monitor --all-projects --org="$SNYK_ORG" --target-reference="${{ github.ref_name }}"
+
+  images:
+    name: Images et Trivy
+    needs:
+      - tests
+      - infrastructure
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      API_IMAGE: transaction-risk-gate-api:${{ github.sha }}
+      WEB_IMAGE: transaction-risk-gate-web:${{ github.sha }}
+    steps:
+      - name: Récupérer le dépôt
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Construire les images candidates
+        run: |
+          docker build --build-arg VCS_REF="${{ github.sha }}" --build-arg VERSION="${{ github.sha }}" --file api/Dockerfile --tag "$API_IMAGE" api
+          docker build --build-arg VCS_REF="${{ github.sha }}" --build-arg VERSION="${{ github.sha }}" --file web/Dockerfile --tag "$WEB_IMAGE" web
+
+      - name: Refuser root et les secrets incorporés
+        shell: bash
+        run: |
+          for image in "$API_IMAGE" "$WEB_IMAGE"; do
+            user="$(docker image inspect "$image" --format '{{.Config.User}}')"
+            case "$user" in
+              ''|0|root|0:*|root:*) echo "$image s'exécuterait en root" >&2; exit 1 ;;
+            esac
+
+            config="$(docker image inspect "$image" --format '{{json .Config.Env}}')"
+            if grep -Eq 'API_KEY=|REDIS_URL=|REDIS_HMAC_SECRET=|LOAD_TEST_TOKEN=' <<<"$config"; then
+              echo "$image contient un secret runtime" >&2
+              exit 1
+            fi
+          done
+
+      - name: Scanner l’image API avec Trivy
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.API_IMAGE }}
+          format: table
+          exit-code: "1"
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: HIGH,CRITICAL
+
+      - name: Scanner l’image web avec Trivy
+        if: ${{ !cancelled() }}
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.WEB_IMAGE }}
+          format: table
+          exit-code: "1"
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: HIGH,CRITICAL
+
+      - name: Empaqueter exactement les images scannées
+        if: github.event_name == 'push' && github.ref_name == 'develop'
+        run:
+          docker save "$API_IMAGE" "$WEB_IMAGE" | zstd -T0 -6 -o
+          "${RUNNER_TEMP}/candidate-images.tar.zst"
+
+      - name: Transmettre le candidat sans reconstruction
+        if: github.event_name == 'push' && github.ref_name == 'develop'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: candidate-images-${{ github.sha }}
+          path: ${{ runner.temp }}/candidate-images.tar.zst
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    name: Publication ACR
+    if: github.event_name == 'push' && github.ref_name == 'develop'
+    needs:
+      - images
+      - sonar
+      - snyk
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: integration
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      api_image: ${{ steps.publish.outputs.api_image }}
+      web_image: ${{ steps.publish.outputs.web_image }}
+    steps:
+      - name: Télécharger les images déjà scannées
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: candidate-images-${{ github.sha }}
+          path: ${{ runner.temp }}/candidate
+
+      - name: Charger le candidat exact
+        run:
+          zstd --decompress --stdout "${RUNNER_TEMP}/candidate/candidate-images.tar.zst" | docker
+          load
+
+      - name: S’authentifier à Azure par OIDC
+        uses: Azure/login@7ddb5af1ef8758cf1353cf3b42f940aee27ba21c # v3.0.2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Publier et résoudre les digests immuables
+        id: publish
+        shell: bash
+        env:
+          ACR_NAME: ${{ vars.AZURE_CONTAINER_REGISTRY }}
+          API_CANDIDATE: transaction-risk-gate-api:${{ github.sha }}
+          WEB_CANDIDATE: transaction-risk-gate-web:${{ github.sha }}
+        run: |
+          test -n "$ACR_NAME"
+          registry="${ACR_NAME}.azurecr.io"
+          az acr login --name "$ACR_NAME"
+
+          push_image() {
+            local candidate="$1"
+            local repository="$2"
+            local reference="${registry}/${repository}:${GITHUB_SHA}"
+            docker tag "$candidate" "$reference"
+            output="$(docker push "$reference")"
+            printf '%s\n' "$output" >&2
+            digest="$(printf '%s\n' "$output" | sed -n 's/.*digest: \(sha256:[a-f0-9]\{64\}\).*/\1/p' | tail -n 1)"
+            [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]] || { echo "Digest ACR introuvable" >&2; exit 1; }
+            printf '%s@%s' "${registry}/${repository}" "$digest"
+          }
+
+          api_image="$(push_image "$API_CANDIDATE" transaction-risk-gate-api)"
+          web_image="$(push_image "$WEB_CANDIDATE" transaction-risk-gate-web)"
+          echo "api_image=$api_image" >> "$GITHUB_OUTPUT"
+          echo "web_image=$web_image" >> "$GITHUB_OUTPUT"
+
+          jq -n \
+            --arg sourceSha "$GITHUB_SHA" \
+            --arg apiImage "$api_image" \
+            --arg webImage "$web_image" \
+            --arg createdAt "$(date --utc +%FT%TZ)" \
+            '{sourceSha:$sourceSha,apiImage:$apiImage,webImage:$webImage,createdAt:$createdAt}' \
+            > deployment-evidence.json
+
+      - name: Conserver la preuve de publication
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: deployment-evidence-${{ github.sha }}
+          path: deployment-evidence.json
+          if-no-files-found: error
+          retention-days: 30
+
+  resolve_promotion:
+    name: Résoudre la promotion
+    if: >-
+      (github.event_name == 'push' && (github.ref_name == 'main' || startsWith(github.ref,
+      'refs/heads/release/'))) || (github.event_name == 'pull_request' && (github.base_ref == 'main'
+      || startsWith(github.base_ref, 'release/')))
+    needs:
+      - images
+      - sonar
+      - snyk
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      api_image: ${{ steps.manifest.outputs.api_image }}
+      web_image: ${{ steps.manifest.outputs.web_image }}
+      source_sha: ${{ steps.manifest.outputs.source_sha }}
+      version: ${{ steps.manifest.outputs.version }}
+    steps:
+      - name: Récupérer tout l’historique
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Valider le manifeste immuable
+        id: manifest
+        env:
+          AZURE_CONTAINER_REGISTRY: ${{ vars.AZURE_CONTAINER_REGISTRY }}
+        run: node scripts/release/manifest.mjs .release/manifest.json
+
+      - name: Refuser un manifeste devenu obsolète
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ steps.manifest.outputs.source_sha }}
+        run: |
+          git merge-base --is-ancestor "$SOURCE_SHA" "$GITHUB_SHA"
+          artifact_changes="$(git diff --name-only "$SOURCE_SHA..$GITHUB_SHA" -- api web)"
+          test -z "$artifact_changes" || { echo "Contexte d'image différent du candidat publié:" >&2; printf '%s\n' "$artifact_changes" >&2; exit 1; }
+
+  deploy_integration:
+    name: Déployer integration
+    if: github.event_name == 'push' && github.ref_name == 'develop'
+    needs:
+      - publish
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/deploy.yml
+    with:
+      stage: integration
+      api_image: ${{ needs.publish.outputs.api_image }}
+      web_image: ${{ needs.publish.outputs.web_image }}
+      source_sha: ${{ github.sha }}
+      release_version: candidate
+    secrets: inherit
+
+  deploy_promoted:
+    name: Déployer le digest promu
+    if: >-
+      github.event_name == 'push' && (github.ref_name == 'main' || startsWith(github.ref,
+      'refs/heads/release/'))
+    needs:
+      - resolve_promotion
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/deploy.yml
+    with:
+      stage: ${{ github.ref_name == 'main' && 'production' || 'preproduction' }}
+      api_image: ${{ needs.resolve_promotion.outputs.api_image }}
+      web_image: ${{ needs.resolve_promotion.outputs.web_image }}
+      source_sha: ${{ needs.resolve_promotion.outputs.source_sha }}
+      release_version: ${{ needs.resolve_promotion.outputs.version }}
+    secrets: inherit

@@ -1,0 +1,108 @@
+# Configuration nginx complète et autonome.
+#
+# C'est un GABARIT : l'image nginx officielle lance `envsubst` au démarrage et
+# remplace les trois variables API_* par les variables d'environnement du
+# conteneur (secrets Azure Container Apps — rien n'est écrit dans le dépôt).
+# NGINX_ENVSUBST_FILTER limite la substitution à ces deux noms, pour qu'envsubst
+# ne vide pas les variables propres de nginx ($host, $uri…) — réglé à la brique
+# Docker.
+
+# Master et workers tournent avec l'uid non privilégié 101 de l'image.
+worker_processes auto;
+error_log       /dev/stderr warn;
+pid             /tmp/nginx.pid;
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    # Le fichier de configuration généré vit dans /tmp ; le chemin doit donc
+    # rester absolu, sinon nginx cherche à tort /tmp/mime.types.
+    include      /etc/nginx/mime.types;
+    default_type application/octet-stream;
+    sendfile     on;
+    client_max_body_size 16k;
+    client_body_temp_path /tmp/client_temp;
+    proxy_temp_path       /tmp/proxy_temp;
+    fastcgi_temp_path     /tmp/fastcgi_temp;
+    uwsgi_temp_path       /tmp/uwsgi_temp;
+    scgi_temp_path        /tmp/scgi_temp;
+
+    # Logs JSON vers stdout : même principe que l'API, la plateforme les ramasse.
+    log_format json escape=json
+        '{"time":"$time_iso8601","method":"$request_method","uri":"$uri",'
+        '"status":$status,"rt":$request_time}';
+    access_log /dev/stdout json;
+
+    server {
+        listen 8080;
+
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-Frame-Options "DENY" always;
+        add_header Referrer-Policy "no-referrer" always;
+        add_header Content-Security-Policy "default-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'" always;
+
+        root  /usr/share/nginx/html;
+        index index.html;
+
+        # Liveness du conteneur web (nginx lui-même). Ouverte et sans clé : les
+        # sondes d'Azure n'envoient aucun en-tête. Distincte du /health de l'API.
+        location = /healthz {
+            access_log off;
+            add_header Content-Type text/plain;
+            return 200 "ok\n";
+        }
+
+        # Le build statique. Une seule page, aucun routage côté client.
+        location / {
+            try_files $uri $uri/ =404;
+        }
+
+        # mime.types de l'image n'associe pas .mjs : sans ça les modules ES
+        # partent en octet-stream et le navigateur refuse de les exécuter.
+        location ~ \.mjs$ {
+            types { application/javascript mjs; }
+            try_files $uri =404;
+        }
+
+        # Passerelle vers l'API. proxy_pass sans URI de fin : l'URI d'origine
+        # (/api/...) part telle quelle vers le backend.
+        location /api/ {
+            proxy_pass ${API_UPSTREAM_SCHEME}://${API_UPSTREAM};
+            proxy_ssl_server_name on;
+
+            # Host = le FQDN de l'upstream ($proxy_host), pas celui vu par le
+            # navigateur : l'ingress d'Azure Container Apps route par en-tête Host,
+            # un Host étranger lui renvoie « Unavailable ». En local (api:3000) le
+            # backend s'en moque, donc le même réglage marche des deux côtés.
+            proxy_set_header Host              $proxy_host;
+            proxy_set_header X-Forwarded-Host  $host;
+            proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+
+            # La clé est injectée ICI, côté serveur. proxy_set_header écrase
+            # tout X-API-Key venu du client : ni contournable, ni visible au
+            # navigateur.
+            proxy_set_header X-API-Key "${API_KEY}";
+            # Un runner k6 contrôlé peut transmettre le token hors production.
+            # Nginx ne connaît pas sa valeur : l'API la compare en temps constant
+            # au secret injecté dans son propre conteneur. Un token absent ou
+            # invalide conserve donc le plafond public normal.
+            proxy_set_header X-Load-Test-Token $http_x_load_test_token;
+        }
+
+        # Readiness consommée par l'interface pour distinguer normal, dégradé et
+        # indisponible. Cette sonde API est ouverte et ne reçoit aucun secret.
+        location = /ready {
+            proxy_pass ${API_UPSTREAM_SCHEME}://${API_UPSTREAM};
+            proxy_ssl_server_name on;
+            proxy_set_header Host              $proxy_host;
+            proxy_set_header X-Forwarded-Host  $host;
+            proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_set_header X-API-Key "";
+            proxy_set_header X-Load-Test-Token "";
+        }
+    }
+}

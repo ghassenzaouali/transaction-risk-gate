@@ -1,0 +1,232 @@
+name: Déploiement
+
+on:
+  workflow_call:
+    inputs:
+      stage:
+        description: Environnement GitHub et Azure logique
+        required: true
+        type: string
+      api_image:
+        description: Référence API ACR par digest
+        required: true
+        type: string
+      web_image:
+        description: Référence web ACR par digest
+        required: true
+        type: string
+      source_sha:
+        description: SHA source porté par les images
+        required: true
+        type: string
+      release_version:
+        description: candidate ou version SemVer
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      stage:
+        description: Environnement à restaurer
+        required: true
+        type: choice
+        options:
+          - integration
+          - preproduction
+          - production
+      api_revision:
+        description: Révision API cible, vide pour la précédente
+        required: false
+        type: string
+      web_revision:
+        description: Révision web cible, vide pour la précédente
+        required: false
+        type: string
+
+concurrency:
+  group: deploy-${{ inputs.stage || github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Déployer et smoke tester
+    if: inputs.api_image != '' && inputs.web_image != '' && inputs.source_sha != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment:
+      name: ${{ inputs.stage }}
+      url: ${{ steps.target.outputs.url }}
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      STAGE: ${{ inputs.stage }}
+      API_IMAGE: ${{ inputs.api_image }}
+      WEB_IMAGE: ${{ inputs.web_image }}
+      APP_VERSION: ${{ inputs.source_sha }}
+      RELEASE_VERSION: ${{ inputs.release_version }}
+      AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+      AZURE_CONTAINERAPPS_ENVIRONMENT_ID: ${{ vars.AZURE_CONTAINERAPPS_ENVIRONMENT_ID }}
+      AZURE_CONTAINER_REGISTRY: ${{ vars.AZURE_CONTAINER_REGISTRY }}
+      AZURE_API_APP_NAME: ${{ vars.AZURE_API_APP_NAME }}
+      AZURE_WEB_APP_NAME: ${{ vars.AZURE_WEB_APP_NAME }}
+      AZURE_REDIS_APP_NAME: ${{ vars.AZURE_REDIS_APP_NAME }}
+    steps:
+      - name: Récupérer le dépôt
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Installer Bicep épinglé
+        uses: ./.github/actions/setup-bicep
+
+      - name: Compiler le template applicatif exact
+        run: |
+          "$BICEP_BIN" build infra/apps.bicep --outfile "${RUNNER_TEMP}/apps.json"
+
+      - name: S’authentifier à Azure par OIDC
+        uses: Azure/login@7ddb5af1ef8758cf1353cf3b42f940aee27ba21c # v3.0.2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Capturer les révisions servant au rollback
+        id: previous
+        shell: bash
+        run: |
+          case "$STAGE" in
+            integration|preproduction) suffix="-$STAGE" ;;
+            production) suffix='' ;;
+            *) echo "STAGE invalide" >&2; exit 1 ;;
+          esac
+          api_app="${AZURE_API_APP_NAME:-api}${suffix}"
+          web_app="${AZURE_WEB_APP_NAME:-web}${suffix}"
+          current_revision() {
+            az containerapp revision list --all --resource-group "$AZURE_RESOURCE_GROUP" --name "$1" \
+              --query 'sort_by([?properties.active],&properties.createdTime)[-1].name' --output tsv 2>/dev/null || true
+          }
+          echo "api_revision=$(current_revision "$api_app")" >> "$GITHUB_OUTPUT"
+          echo "web_revision=$(current_revision "$web_app")" >> "$GITHUB_OUTPUT"
+
+      - name: Déployer les digests sans reconstruction
+        shell: bash
+        env:
+          API_KEY: ${{ secrets.API_KEY }}
+          REDIS_HMAC_SECRET: ${{ secrets.REDIS_HMAC_SECRET }}
+          REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
+          # Un secret d'environnement absent peut retomber sur le secret du dépôt.
+          # La production reçoit donc explicitement une valeur vide.
+          LOAD_TEST_TOKEN: ${{ inputs.stage != 'production' && secrets.LOAD_TEST_TOKEN || '' }}
+          APPS_TEMPLATE_FILE: ${{ runner.temp }}/apps.json
+          DEPLOY_MODE: apply
+        run: bash infra/deploy-apps.sh
+
+      - name: Résoudre l’URL publique
+        id: target
+        shell: bash
+        run: |
+          case "$STAGE" in
+            integration|preproduction) suffix="-$STAGE" ;;
+            production) suffix='' ;;
+          esac
+          web_app="${AZURE_WEB_APP_NAME:-web}${suffix}"
+          fqdn="$(az containerapp show --resource-group "$AZURE_RESOURCE_GROUP" --name "$web_app" --query properties.configuration.ingress.fqdn --output tsv)"
+          test -n "$fqdn"
+          echo "url=https://$fqdn" >> "$GITHUB_OUTPUT"
+
+      - name: Smoke test avec rollback automatique
+        shell: bash
+        env:
+          PUBLIC_BASE_URL: ${{ steps.target.outputs.url }}
+          API_REVISION: ${{ steps.previous.outputs.api_revision }}
+          WEB_REVISION: ${{ steps.previous.outputs.web_revision }}
+        run: |
+          if node scripts/smoke/smoke-test.mjs; then
+            exit 0
+          fi
+
+          echo "Smoke rouge : tentative de rollback des révisions précédentes." >&2
+          if [ -z "$API_REVISION" ] || [ -z "$WEB_REVISION" ]; then
+            echo "Premier déploiement : aucune révision antérieure disponible." >&2
+            exit 1
+          fi
+          bash infra/rollback.sh
+          node scripts/smoke/smoke-test.mjs
+          echo "Rollback sain après échec du candidat ; le workflow reste rouge." >&2
+          exit 1
+
+      - name: Enregistrer la preuve de déploiement
+        id: evidence
+        shell: bash
+        env:
+          PUBLIC_BASE_URL: ${{ steps.target.outputs.url }}
+        run: |
+          jq -n \
+            --arg stage "$STAGE" \
+            --arg sourceSha "$APP_VERSION" \
+            --arg releaseVersion "$RELEASE_VERSION" \
+            --arg apiImage "$API_IMAGE" \
+            --arg webImage "$WEB_IMAGE" \
+            --arg publicBaseUrl "$PUBLIC_BASE_URL" \
+            --arg deployedAt "$(date --utc +%FT%TZ)" \
+            '{stage:$stage,sourceSha:$sourceSha,releaseVersion:$releaseVersion,apiImage:$apiImage,webImage:$webImage,publicBaseUrl:$publicBaseUrl,deployedAt:$deployedAt,smoke:"passed"}' \
+            > deployment-evidence.json
+          {
+            echo "### Déploiement $STAGE"
+            echo "- Source : $APP_VERSION"
+            echo "- API : $API_IMAGE"
+            echo "- Web : $WEB_IMAGE"
+            echo "- URL : $PUBLIC_BASE_URL"
+            echo "- Smoke : passed"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Conserver la preuve immuable
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: deployment-${{ inputs.stage }}-${{ inputs.source_sha }}
+          path: deployment-evidence.json
+          if-no-files-found: error
+          retention-days: 30
+
+  rollback:
+    name: Rollback contrôlé
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment:
+      name: ${{ inputs.stage }}
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      STAGE: ${{ inputs.stage }}
+      API_REVISION: ${{ inputs.api_revision }}
+      WEB_REVISION: ${{ inputs.web_revision }}
+      AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+      AZURE_API_APP_NAME: ${{ vars.AZURE_API_APP_NAME }}
+      AZURE_WEB_APP_NAME: ${{ vars.AZURE_WEB_APP_NAME }}
+    steps:
+      - name: Récupérer le dépôt
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: S’authentifier à Azure par OIDC
+        uses: Azure/login@7ddb5af1ef8758cf1353cf3b42f940aee27ba21c # v3.0.2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Rebasculer le trafic
+        run: bash infra/rollback.sh
+
+      - name: Vérifier la révision restaurée
+        shell: bash
+        run: |
+          case "$STAGE" in
+            integration|preproduction) suffix="-$STAGE" ;;
+            production) suffix='' ;;
+          esac
+          web_app="${AZURE_WEB_APP_NAME:-web}${suffix}"
+          fqdn="$(az containerapp show --resource-group "$AZURE_RESOURCE_GROUP" --name "$web_app" --query properties.configuration.ingress.fqdn --output tsv)"
+          PUBLIC_BASE_URL="https://$fqdn" node scripts/smoke/smoke-test.mjs

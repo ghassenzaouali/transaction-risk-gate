@@ -1,0 +1,15 @@
+{
+  "editor.codeActionsOnSave": {
+    "source.fixAll": "explicit"
+  },
+  "editor.formatOnSave": true,
+  "files.eol": "\n",
+  "files.insertFinalNewline": true,
+  "files.trimTrailingWhitespace": true,
+  "markdownlint.run": "onSave",
+  "prettier.requireConfig": true,
+  "sonarlint.connectedMode.project": {
+    "connectionId": "ghassenzaouali",
+    "projectKey": "ghassenzaouali_transaction-risk-gate"
+  }
+}

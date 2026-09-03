@@ -1,0 +1,10 @@
+title = "Transaction Risk Gate Gitleaks policy"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "SonarCloud connected-mode project identity is public configuration"
+condition = "AND"
+paths = ['''^\.vscode/settings\.json$''', '''^\.sonarlint/connectedMode\.json$''']
+regexes = ['''^ghassenzaouali$''', '''^ghassenzaouali_transaction-risk-gate$''']

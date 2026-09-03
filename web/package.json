@@ -1,0 +1,15 @@
+{
+  "name": "transaction-risk-gate-web",
+  "private": true,
+  "type": "module",
+  "description": "Simulateur explicable — HTML/CSS/JavaScript sans dépendance runtime.",
+  "scripts": {
+    "dev": "node --env-file-if-exists=../.env dev-server.mjs",
+    "test": "node --test",
+    "test:coverage": "c8 --all --include=*.mjs --exclude=*.test.mjs --exclude=dev-server.mjs --reporter=text --reporter=lcov --reporter=json-summary --check-coverage --lines=80 --branches=80 --functions=80 --statements=80 node --test"
+  },
+  "devDependencies": {
+    "c8": "12.0.0",
+    "happy-dom": "20.12.0"
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "recommendations": [
+    "davidanson.vscode-markdownlint",
+    "esbenp.prettier-vscode",
+    "redhat.vscode-yaml",
+    "sonarsource.sonarlint-vscode",
+    "snyk-security.snyk-vulnerability-scanner"
+  ]
+}

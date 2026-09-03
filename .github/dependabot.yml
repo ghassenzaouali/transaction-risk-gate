@@ -1,0 +1,111 @@
+version: 2
+
+updates:
+  - package-ecosystem: npm
+    directory: /
+    target-branch: develop
+    schedule:
+      interval: weekly
+      day: monday
+      time: "05:45"
+      timezone: Europe/Paris
+    open-pull-requests-limit: 3
+    labels:
+      - type:chore
+      - risk:low
+      - area:quality
+      - release:not-required
+    commit-message:
+      prefix: "[TRG-6]"
+
+  - package-ecosystem: npm
+    directory: /api
+    target-branch: develop
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Paris
+    open-pull-requests-limit: 5
+    labels:
+      - type:chore
+      - risk:medium
+      - area:api
+      - area:quality
+      - release:required
+    commit-message:
+      prefix: "[TRG-6]"
+    groups:
+      npm-production:
+        dependency-type: production
+      npm-development:
+        dependency-type: development
+
+  - package-ecosystem: npm
+    directory: /web
+    target-branch: develop
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:15"
+      timezone: Europe/Paris
+    open-pull-requests-limit: 3
+    labels:
+      - type:chore
+      - risk:low
+      - area:web
+      - area:quality
+      - release:not-required
+    commit-message:
+      prefix: "[TRG-6]"
+
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: develop
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:30"
+      timezone: Europe/Paris
+    open-pull-requests-limit: 3
+    labels:
+      - type:ci
+      - risk:medium
+      - area:quality
+      - release:required
+    commit-message:
+      prefix: "[TRG-8]"
+
+  - package-ecosystem: docker
+    directory: /api
+    target-branch: develop
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:45"
+      timezone: Europe/Paris
+    open-pull-requests-limit: 3
+    labels:
+      - type:ci
+      - risk:high
+      - area:infra
+      - release:required
+    commit-message:
+      prefix: "[TRG-7]"
+
+  - package-ecosystem: docker
+    directory: /web
+    target-branch: develop
+    schedule:
+      interval: weekly
+      day: monday
+      time: "07:00"
+      timezone: Europe/Paris
+    open-pull-requests-limit: 3
+    labels:
+      - type:ci
+      - risk:high
+      - area:infra
+      - release:required
+    commit-message:
+      prefix: "[TRG-7]"

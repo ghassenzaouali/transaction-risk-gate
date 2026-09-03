@@ -1,0 +1,11 @@
+{
+  "config": {
+    "default": true,
+    "MD013": false,
+    "MD024": {
+      "siblings_only": true,
+    },
+  },
+  "globs": ["README.md", "CONTRIBUTING.md", "SECURITY.md", "docs/**/*.md", ".github/**/*.md"],
+  "ignores": [".local/**", "artifacts/**", "coverage/**", "node_modules/**"],
+}

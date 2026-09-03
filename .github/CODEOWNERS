@@ -1,0 +1,13 @@
+# Ownership remains explicit, while human approval is optional on this solo exercise.
+* @ghassenzaouali
+
+# Delivery and security controls remain explicitly visible trust boundaries.
+/.github/ @ghassenzaouali
+/.githooks/ @ghassenzaouali
+/.pre-commit-config.yaml @ghassenzaouali
+/.gitleaks.toml @ghassenzaouali
+/SECURITY.md @ghassenzaouali
+/docs/decisions/ @ghassenzaouali
+/docs/governance/ @ghassenzaouali
+/infra/ @ghassenzaouali
+/scripts/ @ghassenzaouali
