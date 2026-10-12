@@ -15,13 +15,13 @@
     "test:coverage:domain": "c8 --clean=false --include=src/domain/**/*.ts --exclude=src/domain/**/*.test.ts --reporter=text --check-coverage --lines=90 --branches=90 --functions=90 --statements=90 node --import tsx --test \"src/domain/**/*.test.ts\""
   },
   "dependencies": {
-    "@fastify/rate-limit": "11.2.0",
-    "fastify": "^5.12.1",
-    "pino": "10.3.1",
+    "@fastify/rate-limit": "11.2.1",
+    "fastify": "^5.12.5",
+    "pino": "10.4.0",
     "prom-client": "^15.1.3",
-    "redis": "6.2.1",
+    "redis": "6.3.0",
     "transaction-risk-gate-tooling": "file:..",
-    "zod": "^4.5.4"
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@types/node": "^26.4.0",
