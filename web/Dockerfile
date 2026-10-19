@@ -3,7 +3,7 @@
 # Pas d'étape de build : le HTML, le CSS et les modules ES sont déjà l'artefact.
 # Cette variante officielle Nginx écoute sans privilège ; son digest multi-arch
 # rend la base reproductible sur le poste et dans GitHub Actions.
-FROM nginxinc/nginx-unprivileged:1.31.4-alpine@sha256:d9083fe47768377ef55dedafd67d4da7c2f2bc2bece7554954f29359deb0dce9
+FROM nginxinc/nginx-unprivileged:1.31.6-alpine@sha256:884e0b7f42f303641b0f4e78755aea647521dca0b89ca3be7992ad78b5c07434
 
 ARG VCS_REF=local
 ARG VERSION=dev
